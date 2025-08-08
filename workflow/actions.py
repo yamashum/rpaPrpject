@@ -7,6 +7,7 @@ from typing import Any
 
 from .flow import Step
 from .runner import ExecutionContext
+from .evaluator import safe_eval
 
 
 def log(step: Step, ctx: ExecutionContext) -> Any:
@@ -23,8 +24,7 @@ def set_var(step: Step, ctx: ExecutionContext) -> Any:
     scope = step.params.get("scope", "flow")
     value = value_expr
     if isinstance(value_expr, str):
-        env = ctx.all_vars()
-        value = eval(value_expr, {"__builtins__": {}}, {"vars": env, **env})
+        value = safe_eval(value_expr, ctx.all_vars())
     ctx.set_var(name, value, scope=scope)
     return value
 

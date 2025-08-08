@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .flow import Flow, Step
+from .evaluator import safe_eval
 
 
 class BreakFlow(Exception):
@@ -106,8 +107,7 @@ class Runner:
                 continue
 
     def _eval_expr(self, expr: str, ctx: ExecutionContext) -> Any:
-        env = {"vars": ctx.all_vars(), "range": range}
-        return eval(expr, {"__builtins__": {}}, env)
+        return safe_eval(expr, ctx.all_vars())
 
     def _run_step(self, step: Step, ctx: ExecutionContext) -> None:
         if step.break_flag:
