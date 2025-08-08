@@ -7,6 +7,7 @@ from typing import Any
 
 from .flow import Step
 from .runner import ExecutionContext
+from .safe_eval import safe_eval
 
 
 def log(step: Step, ctx: ExecutionContext) -> Any:
@@ -24,7 +25,7 @@ def set_var(step: Step, ctx: ExecutionContext) -> Any:
     value = value_expr
     if isinstance(value_expr, str):
         env = ctx.all_vars()
-        value = eval(value_expr, {"__builtins__": {}}, {"vars": env, **env})
+        value = safe_eval(value_expr, {"vars": env, **env})
     ctx.set_var(name, value, scope=scope)
     return value
 
@@ -36,8 +37,36 @@ def wait(step: Step, ctx: ExecutionContext) -> Any:
     return ms
 
 
+def _stub_action(step: Step, ctx: ExecutionContext) -> Any:
+    """Placeholder for unimplemented UI actions."""
+    print(f"{step.action} not implemented")
+    return None
+
+
 BUILTIN_ACTIONS = {
     "log": log,
     "set": set_var,
     "wait": wait,
 }
+
+_UI_ACTIONS = [
+    "launch",
+    "attach",
+    "activate",
+    "click",
+    "double_click",
+    "type_text",
+    "set_value",
+    "select",
+    "check",
+    "uncheck",
+    "find_image",
+    "ocr_read",
+    "click_xy",
+    "open",
+    "write_cell",
+    "save",
+]
+
+for _name in _UI_ACTIONS:
+    BUILTIN_ACTIONS[_name] = _stub_action
