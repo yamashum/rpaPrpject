@@ -1,5 +1,6 @@
 # rpa_mock_ui_fixed.py
 import sys
+from datetime import datetime
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen
 from PyQt6.QtWidgets import (
@@ -144,12 +145,12 @@ class HeaderBar(QWidget):
             QPushButton.ghost:hover{ background:#F6F8FD; }
         """)
         h = QHBoxLayout(self); h.setContentsMargins(16,10,16,10); h.setSpacing(10)
-        run = QPushButton("▶  Run"); run.setObjectName("primary")
-        stop = QPushButton("□  Stop"); stop.setProperty("class","ghost")
-        dry  = QPushButton("◻  Dry Run"); dry.setProperty("class","ghost")
-        sett = QPushButton("⚙  Setting"); sett.setProperty("class","ghost")
+        self.run_btn = QPushButton("▶  Run"); self.run_btn.setObjectName("primary")
+        self.stop_btn = QPushButton("□  Stop"); self.stop_btn.setProperty("class","ghost")
+        self.dry_btn  = QPushButton("◻  Dry Run"); self.dry_btn.setProperty("class","ghost")
+        self.sett_btn = QPushButton("⚙  Setting"); self.sett_btn.setProperty("class","ghost")
         left = QHBoxLayout(); left.setSpacing(8)
-        left.addWidget(run); left.addWidget(stop); left.addWidget(dry); left.addWidget(sett)
+        left.addWidget(self.run_btn); left.addWidget(self.stop_btn); left.addWidget(self.dry_btn); left.addWidget(self.sett_btn)
         h.addLayout(left); h.addStretch(1)
         user = QLabel("🔍    👤"); user.setStyleSheet("color:#8AA0C6;")
         h.addWidget(user)
@@ -202,44 +203,72 @@ class MainWindow(QMainWindow):
 
         root = QWidget(); self.setCentralWidget(root)
         root_v = QVBoxLayout(root); root_v.setContentsMargins(0,0,0,0); root_v.setSpacing(0)
-        root_v.addWidget(HeaderBar())
+        self.header = HeaderBar()
+        root_v.addWidget(self.header)
 
         # 中央3分割
         hsplit = QSplitter(Qt.Orientation.Horizontal)
-        left = ActionPalette()
+        self.action_palette = ActionPalette()
         center_scroll = QScrollArea(); center_scroll.setWidgetResizable(True)
-        canvas = DottedCanvas()
-        # カード配置
-        canvas.v.addWidget(StepCard("🖱️", "Step A", "Click"))
-        canvas.v.addWidget(arrow_label())
-        canvas.v.addWidget(StepCard("🧾", "Step B", "Input"))
-        canvas.v.addWidget(arrow_label())
-        canvas.v.addWidget(StepCard("📊", "Step C", "Write to Excel"))
-        canvas.v.addWidget(arrow_label())
-        canvas.v.addWidget(StepCard("🌐", "Step D", "Web - navigate"))
-        canvas.v.addWidget(arrow_label())
-        canvas.v.addWidget(add_step_button())
-        center_scroll.setWidget(canvas)
+        self.canvas = DottedCanvas()
+        self.add_btn = add_step_button()
+        self.add_btn.clicked.connect(self.add_step)
+        self.canvas.v.addWidget(self.add_btn)
+        self.step_count = 0
+        # 初期カード配置
+        self.add_step(icon="🖱️", action="Click")
+        self.add_step(icon="🧾", action="Input")
+        self.add_step(icon="📊", action="Write to Excel")
+        self.add_step(icon="🌐", action="Web - navigate")
+        center_scroll.setWidget(self.canvas)
         right = PropertiesPanel()
-        hsplit.addWidget(left); hsplit.addWidget(center_scroll); hsplit.addWidget(right)
+        hsplit.addWidget(self.action_palette); hsplit.addWidget(center_scroll); hsplit.addWidget(right)
         hsplit.setSizes([280, 720, 360])
 
         # ⬇︎ ログは縦Splitterで高さを安定化
         vsplit = QSplitter(Qt.Orientation.Vertical)
         vsplit.addWidget(hsplit)
 
-        log_panel = LogPanel()
-        vsplit.addWidget(log_panel)
+        self.log_panel = LogPanel()
+        vsplit.addWidget(self.log_panel)
         vsplit.setCollapsible(0, False)
         vsplit.setCollapsible(1, False)
         vsplit.setSizes([640, 180])  # 上:中央エリア / 下:ログ（固定気味）
 
         root_v.addWidget(vsplit)
 
-        # サンプルログ
-        log_panel.add_row("01:01", "Step A", "Success", ok=True)
-        log_panel.add_row("01:02", "Step B", "Success", ok=True)
-        log_panel.add_row("01:03", "Step C", "Cell does not exist", ok=False)
+        # シグナル接続
+        self.header.run_btn.clicked.connect(self.on_run)
+        self.header.stop_btn.clicked.connect(self.on_stop)
+        self.header.dry_btn.clicked.connect(self.on_dry)
+        self.header.sett_btn.clicked.connect(self.on_setting)
+        self.action_palette.list.itemDoubleClicked.connect(self.palette_double_clicked)
+
+    def add_step(self, icon="🧩", action="New Step"):
+        """Insert a new step card above the add button."""
+        self.step_count += 1
+        card = StepCard(icon, f"Step {self.step_count}", action)
+        idx = self.canvas.v.indexOf(self.add_btn)
+        self.canvas.v.insertWidget(idx, card)
+        idx = self.canvas.v.indexOf(self.add_btn)
+        self.canvas.v.insertWidget(idx, arrow_label())
+
+    def palette_double_clicked(self, item):
+        if item.font().bold():
+            return
+        self.add_step(action=item.text().strip())
+
+    def on_run(self):
+        self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Run", "Started", True)
+
+    def on_stop(self):
+        self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Run", "Stopped", False)
+
+    def on_dry(self):
+        self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Dry Run", "Started", True)
+
+    def on_setting(self):
+        self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Setting", "Opened", True)
 
 def main():
     app = QApplication(sys.argv)
