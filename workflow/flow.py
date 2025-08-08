@@ -37,6 +37,7 @@ class Step:
     target: Optional[Dict[str, Any]] = None
     params: Dict[str, Any] = field(default_factory=dict)
     waitFor: Optional[str] = None
+    timeoutMs: Optional[int] = None
     retry: Optional[int] = None
     onError: Dict[str, Any] = field(default_factory=dict)
     out: Optional[str] = None
@@ -77,6 +78,7 @@ class Flow:
                 target=sd.get("target"),
                 params=sd.get("params", {}),
                 waitFor=sd.get("waitFor"),
+                timeoutMs=sd.get("timeoutMs"),
                 retry=sd.get("retry"),
                 onError=sd.get("onError", {}),
                 out=sd.get("out"),

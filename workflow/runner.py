@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .flow import Flow, Step
+from .safe_eval import safe_eval
 
 
 class BreakFlow(Exception):
@@ -106,8 +107,10 @@ class Runner:
                 continue
 
     def _eval_expr(self, expr: str, ctx: ExecutionContext) -> Any:
-        env = {"vars": ctx.all_vars(), "range": range}
-        return eval(expr, {"__builtins__": {}}, env)
+        env = ctx.all_vars()
+        env = {"vars": env, **env}
+        funcs = {"range": range}
+        return safe_eval(expr, env, funcs)
 
     def _run_step(self, step: Step, ctx: ExecutionContext) -> None:
         if step.break_flag:
@@ -174,18 +177,33 @@ class Runner:
             return
         ctx.push_local()
         log = {"stepId": step.id, "action": step.action}
-        try:
-            result = func(step, ctx)
-            if step.out:
-                ctx.set_var(step.out, result, scope="flow")
-            log["result"] = "ok"
-        except Exception as exc:
-            log["result"] = "error"
-            log["error"] = str(exc)
-            raise
-        finally:
-            print(json.dumps(log))
-            ctx.pop_local()
+        retry = step.retry if step.retry is not None else ctx.flow.defaults.retry
+        timeout_ms = step.timeoutMs if step.timeoutMs is not None else ctx.flow.defaults.timeoutMs
+        last_exc: Optional[Exception] = None
+        for attempt in range(retry + 1):
+            start = time.time()
+            try:
+                result = func(step, ctx)
+                duration = (time.time() - start) * 1000.0
+                if duration > timeout_ms:
+                    raise TimeoutError(f"Step '{step.id}' exceeded {timeout_ms}ms")
+                if step.out:
+                    ctx.set_var(step.out, result, scope="flow")
+                log["result"] = "ok"
+                break
+            except Exception as exc:
+                last_exc = exc
+                log["result"] = "error"
+                log["error"] = str(exc)
+                if attempt == retry:
+                    print(json.dumps(log))
+                    ctx.pop_local()
+                    raise
+        else:
+            if last_exc is not None:
+                raise last_exc
+        print(json.dumps(log))
+        ctx.pop_local()
 
     # ----- control -----
     def pause(self) -> None:
