@@ -23,7 +23,11 @@ def test_fallback_to_image_selector():
 
 
 def test_selector_normalization_and_suggestion():
-    assert normalize_selector("#save") == ["[data-testid=\"save\"]", "#save"]
+    assert normalize_selector("#save") == [
+        "[data-testid=\"save\"]",
+        "#save",
+        "//*[@id=\"save\"]",
+    ]
     assert suggest_selector("button#save") == "[data-testid=\"save\"]"
 
 
