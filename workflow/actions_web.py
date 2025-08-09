@@ -41,7 +41,10 @@ def _get_page(ctx: ExecutionContext) -> Page:
 def open(step: Step, ctx: ExecutionContext) -> Any:
     url = step.params["url"]
     page = _get_page(ctx)
-    page.goto(url)
+    try:
+        page.goto(url)
+    except Exception as exc:  # pragma: no cover - network errors
+        raise RuntimeError(f"Network failure: {exc}") from exc
     return url
 
 
@@ -50,14 +53,22 @@ def click(step: Step, ctx: ExecutionContext) -> Any:
     frame = step.params.get("frame")
     page = _get_page(ctx)
     target = page.frame_locator(frame) if frame else page
+    last_exc: Exception | None = None
     for sel in normalize_selector(selector):
         loc = target.locator(sel)
-        if loc.count():
+        if not loc.count():
+            continue
+        try:
             loc.click()
             return sel
-    # Fall back to original selector
-    target.locator(selector).click()
-    return selector
+        except Exception as exc:  # pragma: no cover - overlay or stale element
+            last_exc = exc
+            continue
+    try:
+        target.locator(selector).click()
+        return selector
+    except Exception as exc:  # pragma: no cover - all selectors failed
+        raise RuntimeError("Element obscured") from (last_exc or exc)
 
 
 def fill(step: Step, ctx: ExecutionContext) -> Any:
