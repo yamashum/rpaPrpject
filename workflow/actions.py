@@ -94,5 +94,7 @@ for _name in _UI_ACTIONS:
     BUILTIN_ACTIONS[_name] = _stub_action
 
 from .actions_web import WEB_ACTIONS
+from .actions_office import OFFICE_ACTIONS
 
 BUILTIN_ACTIONS.update(WEB_ACTIONS)
+BUILTIN_ACTIONS.update(OFFICE_ACTIONS)
