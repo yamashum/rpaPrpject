@@ -1,4 +1,5 @@
 import types
+import queue
 from workflow import gui_tools
 
 
@@ -61,3 +62,18 @@ def test_record_web_normalises_and_wires():
     assert suggestions[0] == "[data-testid=\"save\"]"
     assert result[0]["selector"] == "[data-testid=\"save\"]"
     assert flow["steps"][0]["params"]["selector"] == "[data-testid=\"save\"]"
+
+
+def test_record_web_insert_callback_and_queue():
+    q: queue.Queue = queue.Queue()
+    calls: list[dict] = []
+    actions = [{"selector": "button#ok"}]
+    gui_tools.record_web(
+        actions,
+        insert=True,
+        callback=lambda a: calls.append(a),
+        queue=q,
+    )
+    assert calls[0]["selector"].startswith("[data-testid=")
+    queued = q.get_nowait()
+    assert queued["selector"] == calls[0]["selector"]

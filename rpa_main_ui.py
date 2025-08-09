@@ -1,7 +1,7 @@
-# rpa_mock_ui_fixed.py
 import sys
 from datetime import datetime
-from PyQt6.QtCore import Qt, QFileSystemWatcher
+import queue
+from PyQt6.QtCore import Qt, QFileSystemWatcher, QTimer
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
@@ -241,12 +241,33 @@ class MainWindow(QMainWindow):
         self._watcher = QFileSystemWatcher(["sample_flow.json"])
         self._watcher.fileChanged.connect(self.on_flow_updated)
 
+        # Queue for recorded actions coming from external recorder
+        self._record_queue: queue.Queue = queue.Queue()
+        self._record_timer = QTimer(self)
+        self._record_timer.timeout.connect(self._process_record_queue)
+        self._record_timer.start(100)
+
         # シグナル接続
         self.header.run_btn.clicked.connect(self.on_run)
         self.header.stop_btn.clicked.connect(self.on_stop)
         self.header.dry_btn.clicked.connect(self.on_dry)
         self.header.sett_btn.clicked.connect(self.on_setting)
         self.action_palette.list.itemDoubleClicked.connect(self.palette_double_clicked)
+
+    def record_callback(self, action: dict) -> None:
+        """Callback for :func:`workflow.gui_tools.record_web`.
+
+        The recorder pushes normalised actions here which are then queued for
+        insertion on the GUI thread.
+        """
+
+        self._record_queue.put(action)
+
+    def _process_record_queue(self) -> None:
+        while not self._record_queue.empty():
+            action = self._record_queue.get()
+            title = action.get("action") or action.get("type") or "Recorded"
+            self.add_step(action=title)
 
     def add_step(self, icon="🧩", action="New Step"):
         """Insert a new step card above the add button."""
