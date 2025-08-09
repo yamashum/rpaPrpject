@@ -417,6 +417,58 @@ def _ensure_ready(target: Any, timeout: int) -> None:
         if not _wait_until(lambda: not _has_overlay(), timeout):
             raise RuntimeError("element obscured")
 
+    # Verify the element can be interacted with using hit-testing or pixel checks.
+    if hasattr(target, "hit_test"):
+        def _hit() -> bool:
+            try:
+                return bool(target.hit_test())
+            except Exception:
+                return False
+        if not _wait_until(_hit, timeout):
+            raise RuntimeError("element not hit-testable")
+    elif hasattr(target, "hit_testable"):
+        attr = target.hit_testable
+        def _hit_attr() -> bool:
+            try:
+                return bool(attr() if callable(attr) else attr)
+            except Exception:
+                return False
+        if not _wait_until(_hit_attr, timeout):
+            raise RuntimeError("element not hit-testable")
+    else:
+        coords = None
+        if hasattr(target, "clickable_point"):
+            cp = target.clickable_point
+            try:
+                coords = cp() if callable(cp) else cp
+            except Exception:
+                coords = None
+        elif hasattr(target, "rect"):
+            rect_attr = target.rect
+            try:
+                rect = rect_attr() if callable(rect_attr) else rect_attr
+                if rect and len(rect) >= 4:
+                    x = int((rect[0] + rect[2]) / 2)
+                    y = int((rect[1] + rect[3]) / 2)
+                    coords = (x, y)
+            except Exception:
+                coords = None
+        if coords:
+            x, y = coords
+            try:
+                import pyautogui as pag  # type: ignore
+            except Exception:
+                pass
+            else:
+                def _pixel_visible() -> bool:
+                    try:
+                        pag.pixel(x, y)
+                        return True
+                    except Exception:
+                        return False
+                if not _wait_until(_pixel_visible, timeout):
+                    raise RuntimeError("element not hit-testable")
+
 
 def _scroll_row_into_view(row: Any, timeout: int) -> None:
     """Attempt to bring a table row into view by scrolling."""
