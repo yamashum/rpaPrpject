@@ -256,6 +256,13 @@ def record_web(
                 callback(action)
             if queue is not None:
                 queue.put(action)
+            elif callback is None:
+                try:  # pragma: no cover - rpa_main_ui optional in tests
+                    from rpa_main_ui import recorded_actions_q
+
+                    recorded_actions_q.put(action)
+                except Exception:
+                    pass
     return actions
 
 
