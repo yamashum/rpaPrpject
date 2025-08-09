@@ -246,6 +246,178 @@ def click(step: Step, ctx: ExecutionContext) -> Any:
     return True
 
 
+def attach(step: Step, ctx: ExecutionContext) -> Any:
+    """Resolve ``selector`` recording the strategy used.
+
+    The resolved element and strategy are returned in the same shape as
+    :func:`resolve_selector`.  The chosen strategy is appended to
+    ``ctx.globals['learned_selectors']`` mirroring the behaviour of the
+    previous stub implementation so tests can inspect the resolution path.
+    """
+
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    resolved = _resolve_with_wait(selector, timeout)
+    strategies = ctx.globals.setdefault("learned_selectors", [])
+    strategies.append(resolved["strategy"])
+    return resolved
+
+
+def double_click(step: Step, ctx: ExecutionContext) -> Any:
+    """Perform a double click on the resolved element."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    for attempt in range(retries + 1):
+        resolved = _resolve_with_wait(selector, timeout)
+        target = resolved["target"]
+        try:
+            _ensure_ready(target, timeout)
+            if hasattr(target, "double_click"):
+                target.double_click()
+            elif hasattr(target, "click"):
+                target.click()
+                target.click()
+            else:
+                raise AttributeError("target not double clickable")
+            return True
+        except Exception:
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return True
+
+
+def select(step: Step, ctx: ExecutionContext) -> Any:
+    """Select an item on a UI element."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    item = step.params.get("item") or step.params.get("value")
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    for attempt in range(retries + 1):
+        resolved = _resolve_with_wait(selector, timeout)
+        target = resolved["target"]
+        try:
+            _ensure_ready(target, timeout)
+            if hasattr(target, "select"):
+                target.select(item)
+            elif hasattr(target, "select_item"):
+                target.select_item(item)
+            else:
+                raise AttributeError("target not selectable")
+            return item
+        except Exception:
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return item
+
+
+def _set_checked(target: Any, desired: bool) -> None:
+    """Helper to set checkbox state."""
+
+    def _state() -> bool | None:
+        if hasattr(target, "is_checked"):
+            try:
+                return bool(target.is_checked())
+            except Exception:
+                return None
+        if hasattr(target, "get_toggle_state"):
+            try:
+                return bool(target.get_toggle_state())
+            except Exception:
+                return None
+        if hasattr(target, "checked"):
+            try:
+                return bool(getattr(target, "checked"))
+            except Exception:
+                return None
+        return None
+
+    current = _state()
+    if current is not None and current == desired:
+        return
+    if desired:
+        if hasattr(target, "check"):
+            target.check()
+        elif hasattr(target, "set_state"):
+            target.set_state(True)
+        elif hasattr(target, "toggle"):
+            target.toggle()
+        elif hasattr(target, "click"):
+            target.click()
+        else:
+            raise AttributeError("target not checkable")
+    else:
+        if hasattr(target, "uncheck"):
+            target.uncheck()
+        elif hasattr(target, "set_state"):
+            target.set_state(False)
+        elif hasattr(target, "toggle"):
+            target.toggle()
+        elif hasattr(target, "click"):
+            target.click()
+        else:
+            raise AttributeError("target not checkable")
+
+
+def check(step: Step, ctx: ExecutionContext) -> Any:
+    """Ensure the element represented by ``selector`` is checked."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    for attempt in range(retries + 1):
+        resolved = _resolve_with_wait(selector, timeout)
+        target = resolved["target"]
+        try:
+            _ensure_ready(target, timeout)
+            _set_checked(target, True)
+            return True
+        except Exception:
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return True
+
+
+def uncheck(step: Step, ctx: ExecutionContext) -> Any:
+    """Ensure the element represented by ``selector`` is unchecked."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    for attempt in range(retries + 1):
+        resolved = _resolve_with_wait(selector, timeout)
+        target = resolved["target"]
+        try:
+            _ensure_ready(target, timeout)
+            _set_checked(target, False)
+            return True
+        except Exception:
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return True
+
+
+def click_xy(step: Step, ctx: ExecutionContext) -> Any:
+    """Click at absolute coordinates using ``pyautogui``."""
+
+    x = step.params.get("x")
+    y = step.params.get("y")
+    if x is None or y is None:
+        raise ValueError("click_xy requires 'x' and 'y'")
+    try:  # pragma: no cover - optional dependency
+        import pyautogui  # type: ignore
+    except Exception as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("pyautogui not installed") from exc
+    pyautogui.click(x, y)
+    return (x, y)
+
+
 def set_value(step: Step, ctx: ExecutionContext) -> Any:
     """Set text/value on an element specified by ``selector``."""
 
@@ -384,10 +556,16 @@ for _name in _UI_ACTIONS:
 BUILTIN_ACTIONS.update(
     {
         "launch": launch,
+        "attach": attach,
         "activate": activate,
         "click": click,
+        "double_click": double_click,
+        "select": select,
+        "check": check,
+        "uncheck": uncheck,
         "set_value": set_value,
         "type_text": type_text,
+        "click_xy": click_xy,
         "find_image": find_image,
         "ocr_read": ocr_read,
         "table.find_row": find_table_row,
