@@ -693,7 +693,7 @@ class Runner:
                         if oe.get("screenshot"):
                             self._take_screenshot(step, ctx, exc)
                         if oe.get("recover"):
-                            self._recover(oe["recover"], ctx)
+                            self._recover(oe["recover"], step, ctx)
                         if oe.get("continue"):
                             ctx.pop_local()
                             step.selector = original_selector
@@ -795,10 +795,53 @@ class Runner:
             artifacts["video"] = str(video_path)
         return artifacts
 
-    def _recover(self, recover_spec: Any, ctx: ExecutionContext) -> None:
-        """Execute recovery steps specified in ``onError.recover``."""
-        steps_data = recover_spec
-        if not isinstance(steps_data, list):
-            steps_data = [steps_data]
-        steps = Flow._load_steps(steps_data)
+    def _recover(self, recover_spec: Any, step: Step, ctx: ExecutionContext) -> None:
+        """Execute recovery steps specified in ``onError.recover``.
+
+        ``recover_spec`` may be either a step definition, a list of step
+        definitions or simple string identifiers for common recovery actions.
+        When a string identifier is provided it is mapped to a concrete step
+        using the selector of the failing ``step``.
+        """
+
+        # Map of shorthand recovery names to concrete step definitions.  The
+        # failing step's selector is reused so that the recovery action targets
+        # the same element/window.
+        def _reactivate(s: Step) -> Dict[str, Any]:
+            return {
+                "id": f"{s.id}#reactivate",
+                "action": "activate",
+                "selector": s.selector,
+            }
+
+        def _scroll(s: Step) -> Dict[str, Any]:
+            return {
+                "id": f"{s.id}#scroll",
+                "action": "scroll",
+                "selector": s.selector,
+                "params": {"clicks": -1},
+            }
+
+        shorthand: Dict[str, Callable[[Step], Dict[str, Any]]] = {
+            "re-activate": _reactivate,
+            "scroll": _scroll,
+        }
+
+        steps_data: List[Any]
+        if isinstance(recover_spec, list):
+            steps_data = recover_spec
+        else:
+            steps_data = [recover_spec]
+
+        expanded: List[Dict[str, Any]] = []
+        for spec in steps_data:
+            if isinstance(spec, str):
+                mapper = shorthand.get(spec)
+                if mapper is None:
+                    raise ValueError(f"Unknown recover action '{spec}'")
+                expanded.append(mapper(step))
+            else:
+                expanded.append(spec)
+
+        steps = Flow._load_steps(expanded)
         self._run_steps(steps, ctx)

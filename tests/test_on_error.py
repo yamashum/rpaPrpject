@@ -123,3 +123,33 @@ def test_on_error_uiatree_webtrace_files(tmp_path):
     assert har_files
     assert video_files
 
+
+def test_recover_scroll_retry_success(monkeypatch):
+    """Step succeeds after executing a shorthand 'scroll' recovery."""
+
+    def needs_scroll(step, ctx):
+        if not ctx.globals.get("scrolled"):
+            raise ValueError("needs scroll")
+        ctx.set_var("z", 10, scope="flow")
+
+    def fake_scroll(step, ctx):
+        ctx.globals["scrolled"] = True
+
+    step = Step(
+        id="s",
+        action="needs_scroll",
+        retry=1,
+        onError={"recover": "scroll"},
+    )
+    flow = Flow(version="1", meta=Meta(name="t", permissions=["desktop.uia"]), steps=[step])
+    ctx = ExecutionContext(flow, {})
+    runner = build_runner()
+    runner.register_action("needs_scroll", needs_scroll)
+    # override scroll with our fake to avoid external dependencies
+    runner.register_action("scroll", fake_scroll)
+
+    runner._run_steps([step], ctx)
+
+    assert ctx.get_var("z") == 10
+    assert ctx.globals.get("scrolled") is True
+
