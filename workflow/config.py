@@ -128,11 +128,52 @@ def _wait_value_equals(step: "Step", ctx: "ExecutionContext") -> bool:
     return value == expected
 
 
+def _element_has_overlay(target: Any) -> bool:
+    """Return True if ``target`` appears to be covered by an overlay."""
+
+    keywords = ("overlay", "obscur", "cover", "block")
+    for name in dir(target):
+        if name.startswith("_"):
+            continue
+        lname = name.lower()
+        if any(key in lname for key in keywords):
+            attr = getattr(target, name)
+            try:
+                value = attr() if callable(attr) else attr
+            except TypeError:
+                return False
+            except Exception:
+                return True
+            return bool(value)
+    return False
+
+
+def _wait_overlay_disappear(step: "Step", ctx: "ExecutionContext") -> bool:
+    """Return True when the element is not covered by an overlay.
+
+    The element is identified using the step selector or ``params['selector']``.
+    If the selector cannot be resolved the condition is considered satisfied.
+    """
+
+    selector = step.selector or step.params.get("selector") or {}
+    if not selector:
+        return True
+    try:
+        resolved = resolve_selector(selector)
+    except Exception:
+        return True
+    target = resolved.get("target")
+    if target is None:
+        return True
+    return not _element_has_overlay(target)
+
+
 WAIT_PRESETS: Dict[str, WaitFunc] = {
     "visible": _wait_visible,
     "clickable": _wait_clickable,
     "spinner_disappear": _wait_spinner_disappear,
     "valueEquals": _wait_value_equals,
+    "overlay_disappear": _wait_overlay_disappear,
 }
 
 

@@ -39,6 +39,22 @@ def test_spinner_disappear(monkeypatch):
     assert config.WAIT_PRESETS["spinner_disappear"](step, None) is True
 
 
+def test_overlay_disappear(monkeypatch):
+    class Elem:
+        def __init__(self, overlay=True):
+            self._overlay = overlay
+
+        def has_overlay(self):
+            return self._overlay
+
+    step = Step(id="o", selector={"uia": {}}, params={})
+    elem = Elem(True)
+    monkeypatch.setattr(config, "resolve_selector", lambda sel: {"target": elem})
+    assert config.WAIT_PRESETS["overlay_disappear"](step, None) is False
+    elem._overlay = False
+    assert config.WAIT_PRESETS["overlay_disappear"](step, None) is True
+
+
 def test_value_equals(monkeypatch):
     step = Step(id="s", selector={"uia": {}}, params={"value": "ok"})
 
