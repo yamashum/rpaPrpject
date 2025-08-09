@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import time
 import getpass
+import random
 from typing import Any, Callable, Dict
 
 try:
@@ -454,17 +455,129 @@ def _element_center(target: Any) -> tuple[int, int]:
     return int(x + w / 2), int(y + h / 2)
 
 
+def _human_path(
+    sx: int,
+    sy: int,
+    dx: int,
+    dy: int,
+    steps: int = 20,
+    curve: bool = False,
+    humanize: bool = False,
+):
+    """Yield intermediate points between ``(sx, sy)`` and ``(dx, dy)``.
+
+    When ``curve`` is ``True`` a random control point is introduced so the path
+    follows a quadratic Bézier curve.  When ``humanize`` is ``True`` small
+    random offsets are added to each point."""
+
+    if curve:
+        mx, my = (sx + dx) / 2.0, (sy + dy) / 2.0
+        offset = random.uniform(-0.25, 0.25)
+        cx = mx + (dy - sy) * offset
+        cy = my - (dx - sx) * offset
+    for i in range(1, steps + 1):
+        t = i / steps
+        if curve:
+            x = (1 - t) ** 2 * sx + 2 * (1 - t) * t * cx + t**2 * dx
+            y = (1 - t) ** 2 * sy + 2 * (1 - t) * t * cy + t**2 * dy
+        else:
+            x = sx + (dx - sx) * t
+            y = sy + (dy - sy) * t
+        if humanize:
+            x += random.uniform(-2, 2)
+            y += random.uniform(-2, 2)
+        yield int(x), int(y)
+
+
+def _move_mouse_to(
+    x: int,
+    y: int,
+    duration: float = 0.0,
+    curve: bool = False,
+    humanize: bool = False,
+    pag=None,
+) -> None:
+    """Move the mouse cursor to ``(x, y)`` using optional path tweaks."""
+
+    if pag is None:  # pragma: no cover - optional dependency
+        try:
+            import pyautogui as pag  # type: ignore
+        except Exception as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("pyautogui not installed") from exc
+    if hasattr(pag, "position"):
+        sx, sy = pag.position()
+    else:
+        sx, sy = 0, 0
+    steps = max(int(duration * 60), 1)
+    interval = duration / steps if duration else 0
+    for px, py in _human_path(sx, sy, x, y, steps, curve, humanize):
+        try:
+            pag.moveTo(px, py, duration=interval)
+        except TypeError:  # pragma: no cover - simple stubs in tests
+            pag.moveTo(px, py)
+            if interval:
+                time.sleep(interval)
+
+
+def _drag_mouse(
+    sx: int,
+    sy: int,
+    dx: int,
+    dy: int,
+    duration: float = 0.5,
+    curve: bool = False,
+    humanize: bool = False,
+    pag=None,
+) -> None:
+    """Drag from ``(sx, sy)`` to ``(dx, dy)`` with optional humanisation."""
+
+    if pag is None:  # pragma: no cover - optional dependency
+        try:
+            import pyautogui as pag  # type: ignore
+        except Exception as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("pyautogui not installed") from exc
+    pag.moveTo(sx, sy)
+    pag.mouseDown(button="left")
+    steps = max(int(duration * 60), 1)
+    interval = duration / steps if duration else 0
+    for px, py in _human_path(sx, sy, dx, dy, steps, curve, humanize):
+        try:
+            pag.moveTo(px, py, duration=interval)
+        except TypeError:  # pragma: no cover - simple stubs in tests
+            pag.moveTo(px, py)
+            if interval:
+                time.sleep(interval)
+    pag.mouseUp(button="left")
+
+
 def click(step: Step, ctx: ExecutionContext) -> Any:
-    """Click an element resolved from ``selector`` with retries."""
+    """Click an element resolved from ``selector`` with retries.
+
+    Parameters ``curve`` and ``humanize`` (both optional) control whether the
+    mouse cursor moves to the element following a curved path and with small
+    random jitters before clicking via ``pyautogui``.  When unset the element's
+    native ``click`` method is used instead."""
 
     selector = step.selector or step.params.get("selector") or {}
     timeout = step.params.get("timeout", 3000)
     retries = step.params.get("retry", 0)
+    curve = step.params.get("curve", False)
+    humanize = step.params.get("humanize", False)
+    duration = step.params.get("duration", 0.0)
     for attempt in range(retries + 1):
         resolved = _resolve_with_wait(selector, timeout)
         target = resolved["target"]
         try:
             _ensure_ready(target, timeout)
+            if curve or humanize or duration:
+                x, y = _element_center(target)
+                try:  # pragma: no cover - optional dependency
+                    import pyautogui as pag  # type: ignore
+                except Exception as exc:  # pragma: no cover - optional dependency
+                    raise RuntimeError("pyautogui not installed") from exc
+                _move_mouse_to(x, y, duration, curve, humanize, pag)
+                pag.click()
+                return True
             if hasattr(target, "click"):
                 target.click()
                 return True
@@ -497,17 +610,31 @@ def attach(step: Step, ctx: ExecutionContext) -> Any:
 
 
 def double_click(step: Step, ctx: ExecutionContext) -> Any:
-    """Perform a double click on the resolved element."""
+    """Perform a double click on the resolved element.
+
+    Supports the same ``curve``/``humanize`` parameters as :func:`click` when
+    ``pyautogui`` is used to perform the double click."""
 
     selector = step.selector or step.params.get("selector") or {}
     timeout = step.params.get("timeout", 3000)
     retries = step.params.get("retry", 0)
+    curve = step.params.get("curve", False)
+    humanize = step.params.get("humanize", False)
+    duration = step.params.get("duration", 0.0)
     for attempt in range(retries + 1):
         resolved = _resolve_with_wait(selector, timeout)
         target = resolved["target"]
         try:
             _ensure_ready(target, timeout)
-            if hasattr(target, "double_click"):
+            if curve or humanize or duration:
+                x, y = _element_center(target)
+                try:  # pragma: no cover - optional dependency
+                    import pyautogui as pag  # type: ignore
+                except Exception as exc:  # pragma: no cover - optional dependency
+                    raise RuntimeError("pyautogui not installed") from exc
+                _move_mouse_to(x, y, duration, curve, humanize, pag)
+                pag.doubleClick()
+            elif hasattr(target, "double_click"):
                 target.double_click()
             elif hasattr(target, "click"):
                 target.click()
@@ -526,11 +653,17 @@ def double_click(step: Step, ctx: ExecutionContext) -> Any:
 
 
 def right_click(step: Step, ctx: ExecutionContext) -> Any:
-    """Perform a right click on the resolved element."""
+    """Perform a right click on the resolved element.
+
+    Optional ``curve``/``humanize`` parameters influence how the cursor moves to
+    the element before the click."""
 
     selector = step.selector or step.params.get("selector") or {}
     timeout = step.params.get("timeout", 3000)
     retries = step.params.get("retry", 0)
+    curve = step.params.get("curve", False)
+    humanize = step.params.get("humanize", False)
+    duration = step.params.get("duration", 0.0)
     for attempt in range(retries + 1):
         resolved = _resolve_with_wait(selector, timeout)
         target = resolved["target"]
@@ -538,10 +671,17 @@ def right_click(step: Step, ctx: ExecutionContext) -> Any:
             _ensure_ready(target, timeout)
             x, y = _element_center(target)
             try:  # pragma: no cover - optional dependency
-                import pyautogui  # type: ignore
+                import pyautogui as pag  # type: ignore
             except Exception as exc:  # pragma: no cover - optional dependency
                 raise RuntimeError("pyautogui not installed") from exc
-            pyautogui.rightClick(x, y)
+            if curve or humanize or duration:
+                _move_mouse_to(x, y, duration, curve, humanize, pag)
+                if hasattr(pag, "click"):
+                    pag.click(button="right")
+                else:
+                    pag.rightClick(x, y)
+            else:
+                pag.rightClick(x, y)
             return True
         except Exception as exc:
             msg = str(exc).lower()
@@ -554,11 +694,16 @@ def right_click(step: Step, ctx: ExecutionContext) -> Any:
 
 
 def hover(step: Step, ctx: ExecutionContext) -> Any:
-    """Move the mouse cursor over the resolved element."""
+    """Move the mouse cursor over the resolved element.
+
+    ``curve`` and ``humanize`` options modify the cursor path."""
 
     selector = step.selector or step.params.get("selector") or {}
     timeout = step.params.get("timeout", 3000)
     retries = step.params.get("retry", 0)
+    curve = step.params.get("curve", False)
+    humanize = step.params.get("humanize", False)
+    duration = step.params.get("duration", 0.0)
     x = y = 0
     for attempt in range(retries + 1):
         resolved = _resolve_with_wait(selector, timeout)
@@ -567,10 +712,10 @@ def hover(step: Step, ctx: ExecutionContext) -> Any:
             _ensure_ready(target, timeout)
             x, y = _element_center(target)
             try:  # pragma: no cover - optional dependency
-                import pyautogui  # type: ignore
+                import pyautogui as pag  # type: ignore
             except Exception as exc:  # pragma: no cover - optional dependency
                 raise RuntimeError("pyautogui not installed") from exc
-            pyautogui.moveTo(x, y)
+            _move_mouse_to(x, y, duration, curve, humanize, pag)
             return (x, y)
         except Exception as exc:
             msg = str(exc).lower()
@@ -583,7 +728,9 @@ def hover(step: Step, ctx: ExecutionContext) -> Any:
 
 
 def scroll(step: Step, ctx: ExecutionContext) -> Any:
-    """Scroll over the resolved element using ``pyautogui``."""
+    """Scroll over the resolved element using ``pyautogui``.
+
+    ``curve`` and ``humanize`` affect the cursor movement before scrolling."""
 
     selector = step.selector or step.params.get("selector") or {}
     clicks = step.params.get("clicks")
@@ -591,6 +738,9 @@ def scroll(step: Step, ctx: ExecutionContext) -> Any:
         raise ValueError("scroll requires 'clicks'")
     timeout = step.params.get("timeout", 3000)
     retries = step.params.get("retry", 0)
+    curve = step.params.get("curve", False)
+    humanize = step.params.get("humanize", False)
+    duration = step.params.get("duration", 0.0)
     for attempt in range(retries + 1):
         resolved = _resolve_with_wait(selector, timeout)
         target = resolved["target"]
@@ -598,11 +748,11 @@ def scroll(step: Step, ctx: ExecutionContext) -> Any:
             _ensure_ready(target, timeout)
             x, y = _element_center(target)
             try:  # pragma: no cover - optional dependency
-                import pyautogui  # type: ignore
+                import pyautogui as pag  # type: ignore
             except Exception as exc:  # pragma: no cover - optional dependency
                 raise RuntimeError("pyautogui not installed") from exc
-            pyautogui.moveTo(x, y)
-            pyautogui.scroll(clicks)
+            _move_mouse_to(x, y, duration, curve, humanize, pag)
+            pag.scroll(clicks)
             return clicks
         except Exception as exc:
             msg = str(exc).lower()
@@ -615,7 +765,10 @@ def scroll(step: Step, ctx: ExecutionContext) -> Any:
 
 
 def drag_drop(step: Step, ctx: ExecutionContext) -> Any:
-    """Drag the source element onto the target element."""
+    """Drag the source element onto the target element.
+
+    ``curve`` and ``humanize`` parameters alter the mouse path during the drag
+    operation."""
 
     source_selector = step.selector or step.params.get("source")
     target_selector = step.params.get("target") or step.params.get("destination")
@@ -624,6 +777,8 @@ def drag_drop(step: Step, ctx: ExecutionContext) -> Any:
     timeout = step.params.get("timeout", 3000)
     retries = step.params.get("retry", 0)
     duration = step.params.get("duration", 0.5)
+    curve = step.params.get("curve", False)
+    humanize = step.params.get("humanize", False)
     for attempt in range(retries + 1):
         source_resolved = _resolve_with_wait(source_selector, timeout)
         target_resolved = _resolve_with_wait(target_selector, timeout)
@@ -635,11 +790,14 @@ def drag_drop(step: Step, ctx: ExecutionContext) -> Any:
             sx, sy = _element_center(src)
             dx, dy = _element_center(dst)
             try:  # pragma: no cover - optional dependency
-                import pyautogui  # type: ignore
+                import pyautogui as pag  # type: ignore
             except Exception as exc:  # pragma: no cover - optional dependency
                 raise RuntimeError("pyautogui not installed") from exc
-            pyautogui.moveTo(sx, sy)
-            pyautogui.dragTo(dx, dy, duration=duration, button="left")
+            if curve or humanize:
+                _drag_mouse(sx, sy, dx, dy, duration, curve, humanize, pag)
+            else:
+                pag.moveTo(sx, sy)
+                pag.dragTo(dx, dy, duration=duration, button="left")
             return True
         except Exception as exc:
             msg = str(exc).lower()
