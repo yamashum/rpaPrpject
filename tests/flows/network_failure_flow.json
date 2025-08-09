@@ -1,0 +1,7 @@
+{
+  "version": "1.0",
+  "meta": {"name": "network-failure"},
+  "steps": [
+    {"id": "request", "action": "network.get", "params": {"url": "http://example.com"}, "out": "data"}
+  ]
+}
