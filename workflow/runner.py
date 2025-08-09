@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from .flow import Flow, Step
 from .safe_eval import safe_eval
+from .logging import log_step
 
 
 class BreakFlow(Exception):
@@ -73,10 +74,16 @@ ActionFunc = Callable[[Step, ExecutionContext], Any]
 class Runner:
     """Execute a :class:`Flow` step by step."""
 
-    def __init__(self) -> None:
+    def __init__(self, run_id: Optional[str] = None, base_dir: Path | str = Path("runs")) -> None:
         self.actions: Dict[str, ActionFunc] = {}
         self.paused = False
         self.stopped = False
+        self.run_id = run_id or str(int(time.time() * 1000))
+        self.base_dir = Path(base_dir)
+        self.run_dir = self.base_dir / self.run_id
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.artifacts_dir = self.run_dir / "artifacts"
+        self.artifacts_dir.mkdir(exist_ok=True)
 
     # ----- registration -----
     def register_action(self, name: str, func: ActionFunc) -> None:
@@ -189,10 +196,9 @@ class Runner:
         # actual action
         func = self.actions.get(step.action)
         if not func:
-            print(json.dumps({"stepId": step.id, "action": step.action, "result": "unknown"}))
+            log_step(self.run_id, self.run_dir, step.id, step.action, 0.0, "unknown")
             return
         ctx.push_local()
-        log = {"stepId": step.id, "action": step.action}
         retry = step.retry if step.retry is not None else ctx.flow.defaults.retry
         timeout_ms = step.timeoutMs if step.timeoutMs is not None else ctx.flow.defaults.timeoutMs
         last_exc: Optional[Exception] = None
@@ -205,12 +211,22 @@ class Runner:
                     raise TimeoutError(f"Step '{step.id}' exceeded {timeout_ms}ms")
                 if step.out:
                     ctx.set_var(step.out, result, scope="flow")
-                log["result"] = "ok"
+                log_step(self.run_id, self.run_dir, step.id, step.action, duration, "ok")
                 break
             except Exception as exc:
                 last_exc = exc
-                log["result"] = "error"
-                log["error"] = str(exc)
+                duration = (time.time() - start) * 1000.0
+                artifacts = self._capture_artifacts(step, exc)
+                log_step(
+                    self.run_id,
+                    self.run_dir,
+                    step.id,
+                    step.action,
+                    duration,
+                    "error",
+                    error=str(exc),
+                    **artifacts,
+                )
                 # ----- onError handling -----
                 oe = step.onError or {}
                 if oe.get("screenshot"):
@@ -218,17 +234,14 @@ class Runner:
                 if oe.get("recover"):
                     self._recover(oe["recover"], ctx)
                 if oe.get("continue"):
-                    print(json.dumps(log))
                     ctx.pop_local()
                     return
                 if attempt == retry:
-                    print(json.dumps(log))
                     ctx.pop_local()
                     raise
         else:
             if last_exc is not None:
                 raise last_exc
-        print(json.dumps(log))
         ctx.pop_local()
 
     # ----- control -----
@@ -248,6 +261,15 @@ class Runner:
         Real implementation would capture the current screen. Here we simply
         emit a log entry so tests can verify it was invoked."""
         print(json.dumps({"stepId": step.id, "action": "screenshot", "error": str(exc)}))
+
+    def _capture_artifacts(self, step: Step, exc: Exception) -> Dict[str, str]:
+        """Create placeholder artifact files for a failed step."""
+        ts = int(time.time() * 1000)
+        screenshot_path = self.artifacts_dir / f"{step.id}_{ts}.txt"
+        screenshot_path.write_text("screenshot")
+        ui_tree_path = self.artifacts_dir / f"{step.id}_{ts}_ui.json"
+        ui_tree_path.write_text(json.dumps({}))
+        return {"screenshot": str(screenshot_path), "uiTree": str(ui_tree_path)}
 
     def _recover(self, recover_spec: Any, ctx: ExecutionContext) -> None:
         """Execute recovery steps specified in ``onError.recover``."""
