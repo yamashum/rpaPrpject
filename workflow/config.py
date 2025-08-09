@@ -66,9 +66,73 @@ def _wait_clickable(step: "Step", ctx: "ExecutionContext") -> bool:
     return visible and enabled
 
 
+def _wait_spinner_disappear(step: "Step", ctx: "ExecutionContext") -> bool:
+    """Return True when the element is not visible or missing.
+
+    The spinner is identified using the step selector or ``params['selector']``.
+    If the selector cannot be resolved the condition is considered satisfied.
+    """
+
+    selector = step.selector or step.params.get("selector") or {}
+    if not selector:
+        return True
+    try:
+        resolved = resolve_selector(selector)
+    except Exception:
+        # If the element can't be resolved it likely disappeared already
+        return True
+    target = resolved.get("target")
+    if hasattr(target, "is_visible"):
+        try:
+            return not bool(target.is_visible())
+        except Exception:
+            return True
+    return True
+
+
+def _wait_value_equals(step: "Step", ctx: "ExecutionContext") -> bool:
+    """Return True when the element's value equals ``params['value']``."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    expected = step.params.get("value")
+    if not selector or expected is None:
+        return True
+    try:
+        resolved = resolve_selector(selector)
+    except Exception:
+        return False
+    target = resolved.get("target")
+
+    value: Any = None
+    if hasattr(target, "get_value"):
+        try:
+            value = target.get_value()
+        except Exception:
+            return False
+    elif hasattr(target, "window_text"):
+        try:
+            value = target.window_text()
+        except Exception:
+            return False
+    elif hasattr(target, "inner_text"):
+        try:
+            value = target.inner_text()
+        except Exception:
+            return False
+    elif hasattr(target, "value"):
+        attr = target.value
+        try:
+            value = attr() if callable(attr) else attr
+        except Exception:
+            return False
+    return value == expected
+
+
 WAIT_PRESETS: Dict[str, WaitFunc] = {
     "visible": _wait_visible,
     "clickable": _wait_clickable,
+    "spinner_disappear": _wait_spinner_disappear,
+    "valueEquals": _wait_value_equals,
 }
 
 

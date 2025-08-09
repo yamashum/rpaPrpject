@@ -129,6 +129,17 @@ def wait_for(step: Step, ctx: ExecutionContext) -> Any:
     frame = step.params.get("frame")
     page = _get_page(ctx)
 
+    preset = step.params.get("preset")
+    if preset == "networkidle":
+        page.wait_for_load_state("networkidle", timeout=timeout)
+        return "networkidle"
+    if preset == "url":
+        url = step.params.get("url")
+        if not url:
+            raise RuntimeError("No url provided for preset 'url'")
+        page.wait_for_url(url, timeout=timeout)
+        return url
+
     # Wait for selector
     selector = step.params.get("selector")
     if selector:
