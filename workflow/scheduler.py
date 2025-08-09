@@ -5,10 +5,10 @@ import json
 import os
 import platform
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, Iterable, List, Optional
 
 
 def _match_field(field: str, value: int) -> bool:
@@ -67,6 +67,7 @@ class ScheduledJob:
     lock_file: Path
     log_file: Optional[Path] = None
     report_dir: Path = Path("reports")
+    conditions: List[Callable[[], bool]] = field(default_factory=list)
 
 
 class CronScheduler:
@@ -82,13 +83,33 @@ class CronScheduler:
         lock_file: Path | str,
         log_file: Optional[Path | str] = None,
         report_dir: Path | str = Path("reports"),
+        conditions: Optional[Iterable[Callable[[], bool]]] = None,
     ) -> None:
+        """Register a scheduled job.
+
+        Parameters
+        ----------
+        cron:
+            Cron expression specifying when the job should run.
+        func:
+            Callback executed when the schedule matches.
+        lock_file:
+            File used for obtaining an exclusive lock.
+        log_file:
+            Optional path to a log file collected on crashes.
+        report_dir:
+            Directory where crash reports are written.
+        conditions:
+            Iterable of callables executed before the job. If any
+            callable returns ``False`` the job is skipped.
+        """
         job = ScheduledJob(
             cron,
             func,
             Path(lock_file),
             Path(log_file) if log_file else None,
             Path(report_dir),
+            list(conditions) if conditions else [],
         )
         self.jobs.append(job)
 
@@ -96,6 +117,8 @@ class CronScheduler:
         now = now or datetime.now()
         for job in self.jobs:
             if not _cron_match(job.cron, now):
+                continue
+            if any(not cond() for cond in job.conditions):
                 continue
             job.lock_file.parent.mkdir(parents=True, exist_ok=True)
             fd = os.open(job.lock_file, os.O_RDWR | os.O_CREAT)

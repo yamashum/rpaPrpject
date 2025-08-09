@@ -44,3 +44,22 @@ DPI(`dpi`)を指定できるようになりました。これらのパラメー�
 から選択できる `basis` パラメータと、クリックを実行せずに座標を返す
 `preview` フラグをサポートします。
 
+## 環境チェックのフック
+
+`CronScheduler.add_job` は環境を確認するための条件コールバックを
+受け取れるようになりました。例えば VPN に接続している場合のみ
+ジョブを実行したいときは以下のように指定します。
+
+```python
+from workflow.scheduler import CronScheduler
+
+def is_vpn_connected():
+    # 実際のチェックは環境に合わせて実装
+    return True
+
+s = CronScheduler()
+s.add_job("0 * * * * *", job, "job.lock", conditions=[is_vpn_connected])
+```
+
+条件関数が `False` を返した場合、そのジョブはスキップされます。
+

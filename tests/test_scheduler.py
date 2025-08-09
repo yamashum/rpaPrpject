@@ -49,3 +49,20 @@ def test_crash_report_creation(tmp_path):
     assert data["error"] == "boom"
     assert "python" in data["env"]
     assert "before crash" in data["log"]
+
+
+def test_condition_callbacks_skip_job(tmp_path):
+    called = False
+
+    def job():
+        nonlocal called
+        called = True
+
+    def check():
+        return False
+
+    s = CronScheduler()
+    s.add_job("* * * * * *", job, tmp_path / "lock", conditions=[check])
+    s.run_pending(datetime.now())
+
+    assert not called
