@@ -398,3 +398,44 @@ def test_right_click_hover_scroll_drag_drop(monkeypatch):
     assert calls[0] == ("mv", 25, 40)
     assert calls[1] == ("dd", 115, 220, 0, "left")
 
+
+def test_menu_select_list(monkeypatch):
+    class Win:
+        def __init__(self):
+            self.called = None
+
+        def menu_select(self, path):
+            self.called = path
+
+    win = Win()
+    monkeypatch.setattr(
+        actions, "_resolve_with_wait", lambda s, t: {"strategy": "mock", "target": win}
+    )
+    ctx = build_ctx()
+    actions.menu_select(
+        Step(id="m", action="menu.select", selector={"mock": {}}, params={"path": ["File", "Open"]}),
+        ctx,
+    )
+    assert win.called == "File->Open"
+    assert ctx.globals["learned_selectors"] == ["mock"]
+
+
+def test_menu_select_string(monkeypatch):
+    class Win:
+        def __init__(self):
+            self.called = None
+
+        def menu_select(self, path):
+            self.called = path
+
+    win = Win()
+    monkeypatch.setattr(
+        actions, "_resolve_with_wait", lambda s, t: {"strategy": "mock", "target": win}
+    )
+    ctx = build_ctx()
+    actions.menu_select(
+        Step(id="m", action="menu.select", selector={"mock": {}}, params={"path": "File/Open", "delimiter": "/"}),
+        ctx,
+    )
+    assert win.called == "File->Open"
+
