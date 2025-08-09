@@ -13,6 +13,13 @@ from .safe_eval import safe_eval
 from .logging import log_step
 from .config import PROFILES, get_profile_chain
 
+# Mapping of action names to required roles
+SENSITIVE_ACTION_ROLES: Dict[str, Set[str]] = {
+    "prompt.input": {"user"},
+    "prompt.confirm": {"user"},
+    "prompt.select": {"user"},
+}
+
 
 class BreakFlow(Exception):
     pass
@@ -27,6 +34,7 @@ class ExecutionContext:
     flow: Flow
     inputs: Dict[str, Any]
     globals: Dict[str, Any] = field(default_factory=dict)
+    roles: Set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self.flow_vars = dict(self.flow.inputs)
@@ -39,6 +47,11 @@ class ExecutionContext:
             k: set(v) for k, v in self.flow.permissions.items()
         }
         self.locals_stack: List[Dict[str, Any]] = []
+        roles_input = self.inputs.get("roles")
+        if isinstance(roles_input, (list, set, tuple)):
+            self.roles = set(roles_input)
+        elif isinstance(roles_input, str):
+            self.roles = {roles_input}
 
     # ----- variable helpers -----
     def push_local(self, initial: Optional[Dict[str, Any]] = None) -> None:
@@ -293,6 +306,11 @@ class Runner:
             return
 
         # actual action
+        required = SENSITIVE_ACTION_ROLES.get(step.action, set())
+        if required and not required.issubset(ctx.roles):
+            raise PermissionError(
+                f"Action '{step.action}' requires roles {sorted(required)}"
+            )
         func = self.actions.get(step.action)
         if not func:
             log_step(self.run_id, self.run_dir, step.id, step.action, 0.0, "unknown")
