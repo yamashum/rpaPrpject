@@ -1620,12 +1620,16 @@ from .actions_office import OFFICE_ACTIONS
 from .actions_word import WORD_ACTIONS
 from .actions_outlook import OUTLOOK_ACTIONS
 from .actions_access import ACCESS_ACTIONS
+from .actions_http import HTTP_ACTIONS
+from .actions_files import FILES_ACTIONS
 
 BUILTIN_ACTIONS.update(WEB_ACTIONS)
 BUILTIN_ACTIONS.update(OFFICE_ACTIONS)
 BUILTIN_ACTIONS.update(WORD_ACTIONS)
 BUILTIN_ACTIONS.update(OUTLOOK_ACTIONS)
 BUILTIN_ACTIONS.update(ACCESS_ACTIONS)
+BUILTIN_ACTIONS.update(HTTP_ACTIONS)
+BUILTIN_ACTIONS.update(FILES_ACTIONS)
 
 BUILTIN_ACTIONS.update(
     {

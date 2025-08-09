@@ -75,6 +75,6 @@ def test_file_permission(tmp_path):
         runner.run_flow(flow, {})
 
     runner.register_action("file.read", lambda step, ctx: True)
-    flow_ok = Flow(version="1", meta=Meta(name="t", permissions=["file"]), steps=[step])
+    flow_ok = Flow(version="1", meta=Meta(name="t", permissions=["files"]), steps=[step])
     assert runner.run_flow(flow_ok, {}) == {}
 
