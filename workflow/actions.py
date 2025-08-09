@@ -606,6 +606,35 @@ def select(step: Step, ctx: ExecutionContext) -> Any:
     return item
 
 
+def menu_select(step: Step, ctx: ExecutionContext) -> Any:
+    """Select a menu item following the given path."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    path = step.params.get("path") or step.params.get("menu")
+    if path is None:
+        raise ValueError("menu.select requires 'path'")
+    timeout = step.params.get("timeout", 3000)
+    resolved = _resolve_with_wait(selector, timeout)
+    target = resolved["target"]
+    if isinstance(path, str):
+        delimiter = step.params.get("delimiter", ">")
+        parts = [p.strip() for p in path.split(delimiter) if p.strip()]
+    elif isinstance(path, (list, tuple)):
+        parts = [str(p).strip() for p in path]
+    else:
+        raise TypeError("path must be a string or list")
+    menu_path = "->".join(parts)
+    if hasattr(target, "menu_select"):
+        target.menu_select(menu_path)
+    elif hasattr(target, "select_menu"):
+        target.select_menu(menu_path)
+    else:
+        raise AttributeError("target has no menu_select")
+    strategies = ctx.globals.setdefault("learned_selectors", [])
+    strategies.append(resolved["strategy"])
+    return True
+
+
 def _set_checked(target: Any, desired: bool) -> None:
     """Helper to set checkbox state."""
 
@@ -992,6 +1021,7 @@ _UI_ACTIONS = [
     "type_text",
     "set_value",
     "select",
+    "menu.select",
     "check",
     "uncheck",
     "find_image",
@@ -1023,6 +1053,7 @@ BUILTIN_ACTIONS.update(
         "scroll": scroll,
         "drag_drop": drag_drop,
         "select": select,
+        "menu.select": menu_select,
         "check": check,
         "uncheck": uncheck,
         "set_value": set_value,
