@@ -214,7 +214,7 @@ def activate(step: Step, ctx: ExecutionContext) -> Any:
 
 
 def _ensure_ready(target: Any, timeout: int) -> None:
-    """Wait until the element is visible and enabled."""
+    """Wait until the element is visible, enabled and unobstructed."""
 
     if hasattr(target, "is_visible"):
         if not _wait_until(lambda: target.is_visible(), timeout):
@@ -222,6 +222,37 @@ def _ensure_ready(target: Any, timeout: int) -> None:
     if hasattr(target, "is_enabled"):
         if not _wait_until(lambda: target.is_enabled(), timeout):
             raise TimeoutError("element not enabled")
+
+    # Heuristic overlay detection.  Some UI frameworks expose properties like
+    # ``has_overlay`` or ``is_obscured``.  We introspect for any attribute whose
+    # name hints at the element being obscured and wait until it evaluates to
+    # ``False``.  When such attribute stays truthy past the timeout a
+    # ``RuntimeError`` is raised signalling that the element is covered by an
+    # overlay.
+    keywords = ("overlay", "obscur", "cover", "block")
+    overlay_attr = None
+    for name in dir(target):
+        if name.startswith("_"):
+            continue
+        lname = name.lower()
+        if any(key in lname for key in keywords):
+            overlay_attr = name
+            break
+
+    if overlay_attr:
+        attr = getattr(target, overlay_attr)
+
+        def _has_overlay() -> bool:
+            try:
+                value = attr() if callable(attr) else attr
+            except TypeError:
+                return False
+            except Exception:
+                return True
+            return bool(value)
+
+        if not _wait_until(lambda: not _has_overlay(), timeout):
+            raise RuntimeError("element obscured")
 
 
 def click(step: Step, ctx: ExecutionContext) -> Any:
@@ -239,7 +270,10 @@ def click(step: Step, ctx: ExecutionContext) -> Any:
                 target.click()
                 return True
             raise AttributeError("target not clickable")
-        except Exception:
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
             if attempt >= retries:
                 raise
             time.sleep(0.1)
@@ -282,7 +316,10 @@ def double_click(step: Step, ctx: ExecutionContext) -> Any:
             else:
                 raise AttributeError("target not double clickable")
             return True
-        except Exception:
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
             if attempt >= retries:
                 raise
             time.sleep(0.1)
@@ -308,7 +345,10 @@ def select(step: Step, ctx: ExecutionContext) -> Any:
             else:
                 raise AttributeError("target not selectable")
             return item
-        except Exception:
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
             if attempt >= retries:
                 raise
             time.sleep(0.1)
@@ -376,7 +416,10 @@ def check(step: Step, ctx: ExecutionContext) -> Any:
             _ensure_ready(target, timeout)
             _set_checked(target, True)
             return True
-        except Exception:
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
             if attempt >= retries:
                 raise
             time.sleep(0.1)
@@ -396,7 +439,10 @@ def uncheck(step: Step, ctx: ExecutionContext) -> Any:
             _ensure_ready(target, timeout)
             _set_checked(target, False)
             return True
-        except Exception:
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
             if attempt >= retries:
                 raise
             time.sleep(0.1)
@@ -437,7 +483,10 @@ def set_value(step: Step, ctx: ExecutionContext) -> Any:
             else:
                 raise AttributeError("target not editable")
             return value
-        except Exception:
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
             if attempt >= retries:
                 raise
             time.sleep(0.1)
@@ -544,9 +593,7 @@ _UI_ACTIONS = [
     "find_image",
     "ocr_read",
     "click_xy",
-    "open",
-    "write_cell",
-    "save",
+    "table.find_row",
 ]
 
 for _name in _UI_ACTIONS:
