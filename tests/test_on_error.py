@@ -153,3 +153,59 @@ def test_recover_scroll_retry_success(monkeypatch):
     assert ctx.get_var("z") == 10
     assert ctx.globals.get("scrolled") is True
 
+
+def test_recover_tab_retry_success():
+    """Step succeeds after executing a shorthand 'tab' recovery."""
+
+    def needs_tab(step, ctx):
+        if not ctx.globals.get("tabbed"):
+            raise ValueError("needs tab")
+        ctx.set_var("x", 1, scope="flow")
+
+    def fake_tab_switch(step, ctx):
+        ctx.globals["tabbed"] = True
+
+    step = Step(
+        id="s",
+        action="needs_tab",
+        retry=1,
+        onError={"recover": "tab"},
+    )
+    flow = Flow(version="1", meta=Meta(name="t"), steps=[step])
+    ctx = ExecutionContext(flow, {})
+    runner = build_runner()
+    runner.register_action("needs_tab", needs_tab)
+    runner.register_action("tab_switch", fake_tab_switch)
+
+    runner._run_steps([step], ctx)
+
+    assert ctx.get_var("x") == 1
+    assert ctx.globals.get("tabbed") is True
+
+
+def test_recover_alt_selector_retry_success():
+    """Step retries with an alternative selector after recovery."""
+
+    def needs_alt(step, ctx):
+        if "alt" not in step.selector:
+            raise ValueError("needs alt selector")
+        ctx.set_var("y", 2, scope="flow")
+        ctx.globals["used_selector"] = step.selector
+
+    step = Step(
+        id="s",
+        action="needs_alt",
+        selector={"orig": True},
+        retry=1,
+        onError={"recover": "alt_selector", "altSelector": {"alt": True}},
+    )
+    flow = Flow(version="1", meta=Meta(name="t"), steps=[step])
+    ctx = ExecutionContext(flow, {})
+    runner = build_runner()
+    runner.register_action("needs_alt", needs_alt)
+
+    runner._run_steps([step], ctx)
+
+    assert ctx.get_var("y") == 2
+    assert ctx.globals.get("used_selector") == {"alt": True}
+

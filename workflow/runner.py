@@ -841,9 +841,27 @@ class Runner:
                 "params": {"clicks": -1},
             }
 
+        def _tab(s: Step) -> Dict[str, Any]:
+            return {
+                "id": f"{s.id}#tab",
+                "action": "tab_switch",
+            }
+
+        def _alt_selector(s: Step) -> Dict[str, Any]:
+            alt = s.onError.get("altSelector")
+            if not isinstance(alt, dict):
+                raise ValueError("onError.altSelector required for 'alt_selector'")
+            return {
+                "id": f"{s.id}#alt_selector",
+                "action": "alt_selector",
+                "params": {"step": s, "selector": alt},
+            }
+
         shorthand: Dict[str, Callable[[Step], Dict[str, Any]]] = {
             "re-activate": _reactivate,
             "scroll": _scroll,
+            "tab": _tab,
+            "alt_selector": _alt_selector,
         }
 
         steps_data: List[Any]
