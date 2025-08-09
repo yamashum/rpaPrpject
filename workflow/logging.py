@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
+import re
 
 
 def log_step(
@@ -45,6 +46,10 @@ def log_step(
         "result": result,
     }
     record.update(extra)
+    unmasked = {"runId", "stepId", "action", "screenshot", "uiTree"}
+    for k, v in list(record.items()):
+        if k not in unmasked and isinstance(v, str):
+            record[k] = mask_pii(v)
     if redact:
         for field in redact:
             if field in record:
@@ -53,3 +58,20 @@ def log_step(
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record) + "\n")
+
+
+PII_PATTERNS = [
+    re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
+    re.compile(r"\d{4,}"),
+]
+
+
+def mask_pii(value: str) -> str:
+    """Mask obvious PII like email addresses or long digit sequences."""
+    masked = value
+    for pat in PII_PATTERNS:
+        masked = pat.sub("***", masked)
+    return masked
+
+
+__all__ = ["log_step", "mask_pii"]

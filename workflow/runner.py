@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, IO, List, Optional, Set
 
 from .flow import Flow, Step
 from .safe_eval import safe_eval
-from .logging import log_step
+from .logging import log_step, mask_pii
 from .config import PROFILES, WAIT_PRESETS, get_profile_chain
 
 # Mapping of action names to required roles
@@ -192,6 +192,11 @@ class Runner:
         self._acquire_lock()
         try:
             ctx = ExecutionContext(flow, inputs or {})
+            required = set(flow.meta.permissions)
+            if required and not required.issubset(ctx.roles):
+                raise PermissionError(
+                    f"Flow requires roles {sorted(required)}"
+                )
             self._run_steps(flow.steps, ctx)
             return ctx.flow_vars
         finally:
@@ -200,6 +205,11 @@ class Runner:
     def resume_flow(self, flow: Flow, start_step_id: str, checkpoint_path: Path | str) -> Dict[str, Any]:
         state = json.loads(Path(checkpoint_path).read_text())
         ctx = ExecutionContext(flow, {})
+        required = set(flow.meta.permissions)
+        if required and not required.issubset(ctx.roles):
+            raise PermissionError(
+                f"Flow requires roles {sorted(required)}"
+            )
         ctx.flow_vars.update(state.get("flow_vars", {}))
         ctx.globals.update(state.get("globals", {}))
         index = next((i for i, s in enumerate(flow.steps) if s.id == start_step_id), None)
@@ -528,7 +538,15 @@ class Runner:
 
         Real implementation would capture the current screen. Here we simply
         emit a log entry so tests can verify it was invoked."""
-        print(json.dumps({"stepId": step.id, "action": "screenshot", "error": str(exc)}))
+        print(
+            json.dumps(
+                {
+                    "stepId": step.id,
+                    "action": "screenshot",
+                    "error": mask_pii(str(exc)),
+                }
+            )
+        )
 
     def _capture_artifacts(self, step: Step, exc: Exception) -> Dict[str, str]:
         """Create placeholder artifact files for a failed step."""
