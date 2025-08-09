@@ -145,6 +145,50 @@ def test_find_table_row(monkeypatch):
     assert row["dept"] == "IT"
 
 
+def test_cell_get_set_from_row():
+    ctx = build_ctx()
+    row = {"id": "1", "name": "Bob"}
+    val = actions.cell_get(
+        Step(id="g", action="cell.get", params={"row": row, "column": "name"}),
+        ctx,
+    )
+    assert val == "Bob"
+    actions.cell_set(
+        Step(
+            id="s",
+            action="cell.set",
+            params={"row": row, "column": "name", "value": "Alice"},
+        ),
+        ctx,
+    )
+    assert row["name"] == "Alice"
+
+
+def test_cell_get_set_with_selector(monkeypatch):
+    class Cell:
+        def __init__(self):
+            self.text = "foo"
+
+        def get_text(self):
+            return self.text
+
+        def set_text(self, value):
+            self.text = value
+
+    cell = Cell()
+    monkeypatch.setattr(
+        actions, "resolve_selector", lambda s: {"strategy": "mock", "target": cell}
+    )
+    ctx = build_ctx()
+    val = actions.cell_get(Step(id="g", action="cell.get", selector={"mock": {}}), ctx)
+    assert val == "foo"
+    actions.cell_set(
+        Step(id="s", action="cell.set", selector={"mock": {}}, params={"value": "bar"}),
+        ctx,
+    )
+    assert cell.text == "bar"
+
+
 def test_click_hit_testing_uia(monkeypatch):
     class Elem:
         def __init__(self):

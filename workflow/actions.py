@@ -1262,6 +1262,144 @@ def double_click_row(step: Step, ctx: ExecutionContext) -> Any:
     return True
 
 
+def _get_cell_ref(row: Any, column: Any, headers: list[str] | None = None) -> tuple[Any, Any]:
+    """Return container and key/index for a cell within ``row``.
+
+    When the cell itself is an object, the container is the cell and the
+    second element is ``None``.  ``column`` may be a header name or zero-based
+    index.  ``headers`` provides an optional mapping of column indices to
+    names.
+    """
+
+    if isinstance(column, str) and column.isdigit():
+        column = int(column)
+
+    if isinstance(row, dict):
+        if isinstance(column, int):
+            keys = list(row.keys())
+            if headers and column < len(headers):
+                key = headers[column]
+            else:
+                key = keys[column]
+        else:
+            key = column
+        return row, key
+
+    if isinstance(row, list):
+        if not isinstance(column, int):
+            if headers and column in headers:
+                column = headers.index(column)
+            else:
+                raise KeyError(f"column {column} not found")
+        return row, column
+
+    if hasattr(row, "cells"):
+        cells = getattr(row, "cells")
+        cells = cells() if callable(cells) else cells
+        if isinstance(column, int):
+            return list(cells)[column], None
+        if isinstance(cells, dict) and column in cells:
+            return cells[column], None
+        headers_attr = getattr(row, "headers", None)
+        headers_attr = headers_attr() if callable(headers_attr) else headers_attr
+        if headers_attr and column in headers_attr:
+            idx = headers_attr.index(column)
+            return list(cells)[idx], None
+
+    if hasattr(row, "cell") and column is not None:
+        try:
+            return row.cell(column), None
+        except Exception:
+            pass
+
+    raise KeyError(f"column {column} not found")
+
+
+def _cell_value_from_obj(cell: Any) -> Any:
+    """Extract a textual/value representation from ``cell``."""
+
+    for attr in ("get_value", "get_text", "value", "text"):
+        if hasattr(cell, attr):
+            val = getattr(cell, attr)
+            try:
+                return val() if callable(val) else val
+            except Exception:
+                continue
+    return cell
+
+
+def cell_get(step: Step, ctx: ExecutionContext) -> Any:
+    """Retrieve a cell value either from a row or via ``selector``."""
+
+    row = step.params.get("row")
+    column = step.params.get("column")
+    headers = step.params.get("headers") or []
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+
+    if row is not None and column is not None:
+        container, key = _get_cell_ref(row, column, headers)
+        if key is None:
+            return _cell_value_from_obj(container)
+        value = container[key]
+        return _cell_value_from_obj(value)
+
+    if selector:
+        resolved = _resolve_with_wait(selector, timeout)
+        cell = resolved["target"]
+        return _cell_value_from_obj(cell)
+
+    raise ValueError("cell.get requires 'row' and 'column' or 'selector'")
+
+
+def _set_cell_value(cell: Any, value: Any) -> None:
+    """Set a value on ``cell`` attempting common setter styles."""
+
+    for attr in ("set_value", "set_text", "type_text"):
+        if hasattr(cell, attr):
+            getattr(cell, attr)(value)
+            return
+    for attr in ("value", "text"):
+        if hasattr(cell, attr):
+            attr_obj = getattr(cell, attr)
+            if callable(attr_obj):
+                attr_obj(value)
+            else:
+                try:
+                    setattr(cell, attr, value)
+                except Exception:
+                    continue
+            return
+    raise AttributeError("cell not writable")
+
+
+def cell_set(step: Step, ctx: ExecutionContext) -> Any:
+    """Set a cell value on a row or element resolved by ``selector``."""
+
+    row = step.params.get("row")
+    column = step.params.get("column")
+    value = step.params.get("value")
+    headers = step.params.get("headers") or []
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+
+    if row is not None and column is not None:
+        container, key = _get_cell_ref(row, column, headers)
+        if key is None:
+            _set_cell_value(container, value)
+        else:
+            container[key] = value
+        return value
+
+    if selector:
+        resolved = _resolve_with_wait(selector, timeout)
+        cell = resolved["target"]
+        _set_cell_value(cell, value)
+        return value
+
+    raise ValueError("cell.set requires 'row' and 'column' or 'selector'")
+
+
 def find_image(step: Step, ctx: ExecutionContext) -> Any:
     """Locate ``path`` on screen using ``pyautogui``."""
 
@@ -1443,6 +1581,8 @@ BUILTIN_ACTIONS.update(
         "table.find_row": find_table_row,
         "row.select": select_row,
         "row.double_click": double_click_row,
+        "cell.get": cell_get,
+        "cell.set": cell_set,
         "move": move,
         "resize": resize,
         "wait_open": wait_open,
