@@ -57,7 +57,7 @@ def test_click_handles_dom_change(monkeypatch):
 
 def test_open_network_failure(monkeypatch):
     page = DummyPage(fail_goto=True)
-    monkeypatch.setattr(actions_web, "_get_page", lambda ctx: page)
+    monkeypatch.setattr(actions_web, "_get_page", lambda ctx, **_: page)
     step = Step(id="s", action="open", params={"url": "http://example.com"})
     with pytest.raises(RuntimeError):
         actions_web.open(step, _ctx())
