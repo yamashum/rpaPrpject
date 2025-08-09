@@ -17,6 +17,8 @@ def test_excel_actions(monkeypatch):
     rng = MagicMock()
     rng.Value = "old"
     sheet.Range.return_value = rng
+    cells = MagicMock()
+    sheet.Cells = cells
     wb.ActiveSheet = sheet
     app.Workbooks.Open.return_value = wb
 
@@ -35,3 +37,19 @@ def test_excel_actions(monkeypatch):
 
     office.excel_save(Step(id="save", action="excel.save", params={}), ctx)
     wb.Save.assert_called_once()
+
+    office.excel_run_macro(
+        Step(id="macro", action="excel.run_macro", params={"name": "Macro1"}), ctx
+    )
+    app.Run.assert_called_once_with("Macro1")
+
+    office.excel_export(
+        Step(id="export", action="excel.export", params={"path": "out.pdf", "format": 0}), ctx
+    )
+    wb.ExportAsFixedFormat.assert_called_once_with(0, "out.pdf")
+
+    office.excel_find_replace(
+        Step(id="fr", action="excel.find_replace", params={"find": "old", "replace": "new"}),
+        ctx,
+    )
+    cells.Replace.assert_called_once_with("old", "new")

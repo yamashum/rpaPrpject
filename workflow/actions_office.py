@@ -65,9 +65,39 @@ def excel_save(step: Step, ctx: ExecutionContext) -> Any:
     return True
 
 
+def excel_run_macro(step: Step, ctx: ExecutionContext) -> Any:
+    """Run a macro in the Excel application."""
+    macro = step.params["name"]
+    app = ctx.globals[_EXCEL_APP]
+    return app.Run(macro)
+
+
+def excel_export(step: Step, ctx: ExecutionContext) -> Any:
+    """Export the workbook to a fixed format (e.g. PDF)."""
+    wb = ctx.globals[_EXCEL_BOOK]
+    path = step.params["path"]
+    fmt = step.params.get("format", 0)
+    wb.ExportAsFixedFormat(fmt, path)
+    return path
+
+
+def excel_find_replace(step: Step, ctx: ExecutionContext) -> Any:
+    """Find and replace text in the active sheet."""
+    find = step.params["find"]
+    replace = step.params.get("replace", "")
+    sheet_name = step.params.get("sheet")
+    wb = ctx.globals[_EXCEL_BOOK]
+    sheet = wb.Worksheets(sheet_name) if sheet_name else wb.ActiveSheet
+    sheet.Cells.Replace(find, replace)
+    return replace
+
+
 OFFICE_ACTIONS = {
     "excel.open": excel_open,
     "excel.get": excel_get,
     "excel.set": excel_set,
     "excel.save": excel_save,
+    "excel.run_macro": excel_run_macro,
+    "excel.export": excel_export,
+    "excel.find_replace": excel_find_replace,
 }
