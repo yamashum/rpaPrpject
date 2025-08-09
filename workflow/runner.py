@@ -603,7 +603,14 @@ class Runner:
         har: bool = False,
         video: bool = False,
     ) -> Dict[str, str]:
-        """Create placeholder artifact files for a failed step."""
+        """Create artifact files for a failed step.
+
+        When ``video`` is requested, a short low-FPS screen recording is
+        captured. The recording attempts to grab a few frames of the screen at
+        one frame per second. If screen capture or video encoding fails (e.g. in
+        headless environments), a placeholder file is written instead so that
+        callers still receive a path.
+        """
         ts = int(time.time() * 1000)
         artifacts: Dict[str, str] = {}
         screenshot_path = self.artifacts_dir / f"{step.id}_{ts}.txt"
@@ -623,7 +630,24 @@ class Runner:
             artifacts["har"] = str(har_path)
         if video:
             video_path = self.artifacts_dir / f"{step.id}_{ts}_video.mp4"
-            video_path.write_text("video")
+            try:
+                import time as _time
+                from PIL import Image, ImageGrab  # type: ignore
+                import imageio.v2 as imageio  # type: ignore
+                import numpy as np  # type: ignore
+
+                frames = []
+                for _ in range(3):
+                    try:
+                        img = ImageGrab.grab()
+                    except Exception:
+                        img = Image.new("RGB", (320, 240), color="black")
+                    frames.append(np.array(img))
+                    _time.sleep(1)  # 1 FPS
+                imageio.mimsave(video_path, frames, fps=1)
+            except Exception:
+                # Fallback to placeholder file if recording fails
+                video_path.write_text("video")
             artifacts["video"] = str(video_path)
         return artifacts
 
