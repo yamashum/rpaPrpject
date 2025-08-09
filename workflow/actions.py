@@ -220,6 +220,87 @@ def activate(step: Step, ctx: ExecutionContext) -> Any:
     return True
 
 
+def move(step: Step, ctx: ExecutionContext) -> Any:
+    """Move a window to the specified coordinates."""
+
+    selector = step.params.get("window") or step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    resolved = _resolve_with_wait(selector, timeout)
+    target = resolved["target"]
+    x = step.params.get("x")
+    y = step.params.get("y")
+    if hasattr(target, "move") and x is not None and y is not None:
+        try:
+            target.move(x, y)
+        except Exception:
+            pass
+    strategies = ctx.globals.setdefault("learned_selectors", [])
+    strategies.append(resolved["strategy"])
+    return True
+
+
+def resize(step: Step, ctx: ExecutionContext) -> Any:
+    """Resize a window to the specified width and height."""
+
+    selector = step.params.get("window") or step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    resolved = _resolve_with_wait(selector, timeout)
+    target = resolved["target"]
+    width = step.params.get("width")
+    height = step.params.get("height")
+    if hasattr(target, "resize") and width is not None and height is not None:
+        try:
+            target.resize(width, height)
+        except Exception:
+            pass
+    strategies = ctx.globals.setdefault("learned_selectors", [])
+    strategies.append(resolved["strategy"])
+    return True
+
+
+def wait_open(step: Step, ctx: ExecutionContext) -> Any:
+    """Wait until a window matching ``selector`` becomes available."""
+
+    selector = step.params.get("window") or step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    resolved = _resolve_with_wait(selector, timeout)
+    strategies = ctx.globals.setdefault("learned_selectors", [])
+    strategies.append(resolved["strategy"])
+    return resolved
+
+
+def wait_close(step: Step, ctx: ExecutionContext) -> Any:
+    """Wait until the window matching ``selector`` is closed."""
+
+    selector = step.params.get("window") or step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    resolved = _resolve_with_wait(selector, timeout)
+    strategies = ctx.globals.setdefault("learned_selectors", [])
+    strategies.append(resolved["strategy"])
+
+    def _closed() -> bool:
+        try:
+            resolve_selector(selector)
+            return False
+        except Exception:
+            return True
+
+    if not _wait_until(_closed, timeout):
+        raise TimeoutError("window still open")
+    return True
+
+
+def modal_wait_open(step: Step, ctx: ExecutionContext) -> Any:
+    """Wait until a modal window opens and return the resolution."""
+
+    selector = step.params.get("window") or step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    resolved = _resolve_with_wait(selector, timeout)
+    strategies = ctx.globals.setdefault("learned_selectors", [])
+    strategies.append(resolved["strategy"])
+    return resolved
+
+
 def _ensure_ready(target: Any, timeout: int) -> None:
     """Wait until the element is visible, enabled and unobstructed."""
 
@@ -779,6 +860,11 @@ _UI_ACTIONS = [
     "table.find_row",
     "row.select",
     "row.double_click",
+    "move",
+    "resize",
+    "wait_open",
+    "wait_close",
+    "modal_wait_open",
 ]
 
 for _name in _UI_ACTIONS:
@@ -803,6 +889,11 @@ BUILTIN_ACTIONS.update(
         "table.find_row": find_table_row,
         "row.select": select_row,
         "row.double_click": double_click_row,
+        "move": move,
+        "resize": resize,
+        "wait_open": wait_open,
+        "wait_close": wait_close,
+        "modal_wait_open": modal_wait_open,
     }
 )
 
