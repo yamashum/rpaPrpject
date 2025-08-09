@@ -6,7 +6,7 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from .flow import Flow, Step
 from .safe_eval import safe_eval
@@ -29,8 +29,14 @@ class ExecutionContext:
 
     def __post_init__(self) -> None:
         self.flow_vars = dict(self.flow.inputs)
-        self.flow_vars.update(self.flow.variables)
+        self.var_types: Dict[str, str] = {}
+        for name, vdef in self.flow.variables.items():
+            self.flow_vars[name] = vdef.value
+            self.var_types[name] = vdef.type
         self.flow_vars.update(self.inputs)
+        self.permissions: Dict[str, Set[str]] = {
+            k: set(v) for k, v in self.flow.permissions.items()
+        }
         self.locals_stack: List[Dict[str, Any]] = []
 
     # ----- variable helpers -----
@@ -40,7 +46,28 @@ class ExecutionContext:
     def pop_local(self) -> None:
         self.locals_stack.pop()
 
+    def _check_write(self, name: str) -> None:
+        if "write" not in self.permissions.get(name, {"read", "write"}):
+            raise PermissionError(f"Write not permitted for variable '{name}'")
+
+    def _check_read(self, name: str) -> None:
+        if "read" not in self.permissions.get(name, {"read", "write"}):
+            raise PermissionError(f"Read not permitted for variable '{name}'")
+
+    def _has_var(self, name: str) -> bool:
+        for scope in reversed(self.locals_stack):
+            if name in scope:
+                return True
+        return name in self.flow_vars or name in self.globals
+
     def set_var(self, name: str, value: Any, scope: str = "local") -> None:
+        self._check_write(name)
+        expected = self.var_types.get(name)
+        if expected and expected != "any":
+            type_map = {"int": int, "float": float, "str": str, "bool": bool}
+            py_type = type_map.get(expected)
+            if py_type and not isinstance(value, py_type):
+                raise TypeError(f"Variable '{name}' expects {expected}")
         if scope == "global":
             self.globals[name] = value
         elif scope == "flow":
@@ -51,6 +78,7 @@ class ExecutionContext:
             self.locals_stack[-1][name] = value
 
     def get_var(self, name: str) -> Any:
+        self._check_read(name)
         for scope in reversed(self.locals_stack):
             if name in scope:
                 return scope[name]
@@ -61,11 +89,40 @@ class ExecutionContext:
         raise KeyError(name)
 
     def all_vars(self) -> Dict[str, Any]:
-        merged = dict(self.globals)
-        merged.update(self.flow_vars)
-        for scope in self.locals_stack:
-            merged.update(scope)
-        return merged
+        env = _EnvProxy(self)
+        env["vars"] = env
+        return env
+
+
+class _EnvProxy(dict):
+    """Mapping proxy that enforces read permissions on access."""
+
+    def __init__(self, ctx: ExecutionContext):
+        super().__init__()
+        self._ctx = ctx
+        for scope in ctx.locals_stack:
+            for k, v in scope.items():
+                if "read" in ctx.permissions.get(k, {"read", "write"}):
+                    super().__setitem__(k, v)
+        for k, v in ctx.flow_vars.items():
+            if "read" in ctx.permissions.get(k, {"read", "write"}):
+                super().__setitem__(k, v)
+        for k, v in ctx.globals.items():
+            if "read" in ctx.permissions.get(k, {"read", "write"}):
+                super().__setitem__(k, v)
+
+    def __contains__(self, key: object) -> bool:  # type: ignore[override]
+        if key == "vars":
+            return True
+        if isinstance(key, str) and self._ctx._has_var(key):
+            self._ctx._check_read(key)
+            return True
+        return super().__contains__(key)  # pragma: no cover - defensive
+
+    def __getitem__(self, key: str) -> Any:  # type: ignore[override]
+        if key == "vars":
+            return self
+        return self._ctx.get_var(key)
 
 
 ActionFunc = Callable[[Step, ExecutionContext], Any]
@@ -127,7 +184,6 @@ class Runner:
 
     def _eval_expr(self, expr: str, ctx: ExecutionContext) -> Any:
         env = ctx.all_vars()
-        env = {"vars": env, **env}
         funcs = {"range": range}
         return safe_eval(expr, env, funcs)
 

@@ -25,6 +25,14 @@ class Defaults:
 
 
 @dataclass
+class VarDef:
+    """Definition of a flow variable including its type and default value."""
+
+    type: str = "any"
+    value: Any = None
+
+
+@dataclass
 class Step:
     """Definition of a single step in the flow.
 
@@ -66,7 +74,8 @@ class Flow:
     version: str
     meta: Meta
     inputs: Dict[str, Any] = field(default_factory=dict)
-    variables: Dict[str, Any] = field(default_factory=dict)
+    variables: Dict[str, VarDef] = field(default_factory=dict)
+    permissions: Dict[str, List[str]] = field(default_factory=dict)
     defaults: Defaults = field(default_factory=Defaults)
     steps: List[Step] = field(default_factory=list)
 
@@ -110,11 +119,18 @@ class Flow:
         meta = Meta(**data.get("meta", {}))
         defaults = Defaults(**data.get("defaults", {}))
         steps = cls._load_steps(data.get("steps", []))
+        vars_spec: Dict[str, VarDef] = {}
+        for name, spec in (data.get("variables") or {}).items():
+            if isinstance(spec, dict):
+                vars_spec[name] = VarDef(type=spec.get("type", "any"), value=spec.get("value"))
+            else:
+                vars_spec[name] = VarDef(value=spec)
         return cls(
             version=data.get("version", "1.0"),
             meta=meta,
             inputs=data.get("inputs", {}),
-            variables=data.get("variables", {}),
+            variables=vars_spec,
+            permissions=data.get("permissions", {}),
             defaults=defaults,
             steps=steps,
         )
