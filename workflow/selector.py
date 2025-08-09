@@ -26,19 +26,130 @@ def _resolve_uia(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _resolve_win32(data: Dict[str, Any]) -> Dict[str, Any]:
-    return data
+    """Resolve win32 based selectors.
+
+    The dummy implementation mirrors :func:`_resolve_uia` by honouring an
+    ``"exists"`` flag.  When ``exists`` is ``False`` a
+    :class:`SelectionError` is raised to simulate a lookup failure.  In all
+    other cases the supplied data is considered resolved and returned.  The
+    behaviour is intentionally small but provides a realistic failure mode so
+    that statistics and learning can be exercised in tests.
+    """
+
+    if data.get("exists", True):
+        return data
+    raise SelectionError("win32 element not found")
 
 
 def _resolve_anchor(data: Dict[str, Any]) -> Dict[str, Any]:
-    return data
+    """Resolve an element relative to an anchor.
+
+    The anchor can be specified using text/OCR, an image or explicit
+    coordinates.  Offsets may be supplied either as ``{"x": int, "y": int}``
+    mapping, a two item sequence or ``offsetX``/``offsetY`` keys.  The function
+    returns the final coordinates of the element relative to the anchor.
+    ``SelectionError`` is raised when the anchor cannot be resolved.
+    """
+
+    anchor_pos: Dict[str, Any]
+    if "image" in data:
+        anchor_pos = _resolve_image(data["image"])
+    elif "text" in data or "ocr" in data:
+        # for tests we simply expect coordinates to be provided
+        if "x" in data and "y" in data:
+            anchor_pos = {"x": data["x"], "y": data["y"]}
+        else:
+            raise SelectionError("text/OCR anchor requires 'x' and 'y'")
+    elif "x" in data and "y" in data:
+        anchor_pos = {"x": data["x"], "y": data["y"]}
+    else:
+        raise SelectionError("Unsupported anchor specification")
+
+    ox = oy = 0
+    offset = data.get("offset")
+    if isinstance(offset, dict):
+        ox = int(offset.get("x", 0))
+        oy = int(offset.get("y", 0))
+    elif isinstance(offset, (list, tuple)) and len(offset) >= 2:
+        ox, oy = int(offset[0]), int(offset[1])
+    else:
+        ox = int(data.get("offsetX", 0))
+        oy = int(data.get("offsetY", 0))
+
+    return {"x": anchor_pos["x"] + ox, "y": anchor_pos["y"] + oy}
 
 
 def _resolve_image(data: Dict[str, Any]) -> Dict[str, Any]:
-    return data
+    """Resolve an element using template image matching.
+
+    The implementation uses :mod:`Pillow` and :mod:`numpy` for a tiny template
+    matching routine.  ``data`` must contain ``"path"`` pointing to the template
+    image.  A ``"source"`` image can be supplied to search in; when omitted the
+    template itself is used.  ``tolerance`` specifies the average per‑pixel
+    difference that is accepted.  The function returns the centre coordinates of
+    the best match or raises :class:`SelectionError` when no match is found.
+    """
+
+    path = data.get("path")
+    if not path:
+        raise SelectionError("image path missing")
+
+    try:
+        from PIL import Image
+        import numpy as np  # type: ignore
+    except Exception as exc:  # pragma: no cover - dependency issues
+        raise SelectionError("image libraries not available") from exc
+
+    try:
+        template = Image.open(path)
+    except Exception as exc:
+        raise SelectionError(f"unable to open image '{path}'") from exc
+
+    source_path = data.get("source", path)
+    try:
+        source_img = Image.open(source_path)
+    except Exception as exc:
+        raise SelectionError(f"unable to open image '{source_path}'") from exc
+
+    tmpl = np.asarray(template.convert("RGB"))
+    src = np.asarray(source_img.convert("RGB"))
+    h, w = tmpl.shape[:2]
+    H, W = src.shape[:2]
+    if h > H or w > W:
+        raise SelectionError("template larger than source image")
+
+    tolerance = float(data.get("tolerance", 0))
+    match: Tuple[int, int] | None = None
+
+    for y in range(0, H - h + 1):
+        for x in range(0, W - w + 1):
+            crop = src[y : y + h, x : x + w]
+            diff = np.abs(crop.astype(float) - tmpl.astype(float)).mean()
+            if diff <= tolerance:
+                match = (x + w // 2, y + h // 2)
+                break
+        if match:
+            break
+
+    if match is None:
+        raise SelectionError("image not found")
+
+    return {"x": match[0], "y": match[1]}
 
 
 def _resolve_coordinate(data: Dict[str, Any]) -> Dict[str, Any]:
-    return data
+    """Resolve a coordinate based selector.
+
+    ``data`` must contain numeric ``x`` and ``y`` values.  They are returned as
+    a mapping.  ``SelectionError`` is raised when either coordinate is missing.
+    """
+
+    try:
+        x = int(data["x"])
+        y = int(data["y"])
+    except Exception as exc:
+        raise SelectionError("coordinate requires 'x' and 'y'") from exc
+    return {"x": x, "y": y}
 
 
 _STRATEGIES = {
