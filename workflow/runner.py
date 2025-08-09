@@ -199,6 +199,17 @@ class Runner:
             time.sleep(0.1)
         raise TimeoutError(f"waitFor condition not met: {expr}")
 
+    def _focus_target(self, step: Step, ctx: ExecutionContext) -> None:
+        """Placeholder to focus the UI element/window specified in ``step.target``.
+
+        Real implementations would bring the target application window to the
+        foreground. For testing purposes we simply emit a structured log so that
+        the behaviour can be asserted."""
+
+        if step.target is None:
+            return
+        print(json.dumps({"stepId": step.id, "action": "focus", "target": step.target}))
+
     def _save_context(self, step: Step, ctx: ExecutionContext) -> None:
         state = {"globals": ctx.globals, "flow_vars": ctx.flow_vars}
         path = self.run_dir / f"{step.id}_ctx.json"
@@ -292,6 +303,8 @@ class Runner:
         for attempt in range(retry + 1):
             start = time.time()
             try:
+                if step.target:
+                    self._focus_target(step, ctx)
                 if step.waitFor:
                     self._wait_for_condition(step.waitFor, ctx, timeout_ms)
                 result = func(step, ctx)
@@ -300,7 +313,25 @@ class Runner:
                     raise TimeoutError(f"Step '{step.id}' exceeded {timeout_ms}ms")
                 if step.out:
                     ctx.set_var(step.out, result, scope="flow")
-                log_step(self.run_id, self.run_dir, step.id, step.action, duration, "ok")
+                log_step(
+                    self.run_id,
+                    self.run_dir,
+                    step.id,
+                    step.action,
+                    duration,
+                    "ok",
+                    output=result,
+                )
+                print(
+                    json.dumps(
+                        {
+                            "stepId": step.id,
+                            "action": step.action,
+                            "result": "ok",
+                            "output": result,
+                        }
+                    )
+                )
                 break
             except Exception as exc:
                 last_exc = exc
@@ -315,6 +346,16 @@ class Runner:
                     "error",
                     error=str(exc),
                     **artifacts,
+                )
+                print(
+                    json.dumps(
+                        {
+                            "stepId": step.id,
+                            "action": step.action,
+                            "result": "error",
+                            "error": str(exc),
+                        }
+                    )
                 )
                 # ----- onError handling -----
                 oe = step.onError or {}
