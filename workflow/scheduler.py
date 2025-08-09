@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import ctypes
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -166,17 +167,60 @@ def is_screen_locked() -> bool:
         return False
 
 
+def _get_display_info() -> dict:
+    """Return basic display information such as DPI and monitor sizes."""
+    dpi = 96
+    monitors: List[dict] = []
+    try:
+        from .gui_tools import _screen_dpi  # type: ignore
+
+        dpi = int(_screen_dpi())
+    except Exception:
+        pass
+
+    try:
+        if sys.platform.startswith("win"):
+            user32 = ctypes.windll.user32
+            try:
+                user32.SetProcessDPIAware()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            width = int(user32.GetSystemMetrics(0))
+            height = int(user32.GetSystemMetrics(1))
+            monitors.append({"width": width, "height": height})
+    except Exception:
+        pass
+
+    return {"dpi": dpi, "monitors": monitors}
+
+
+def _is_admin() -> bool:
+    """Return True if the current process has administrative privileges."""
+    try:
+        if os.name == "nt":
+            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        return os.geteuid() == 0
+    except Exception:
+        return False
+
+
 def capture_crash(exc: Exception, log_file: Optional[Path], report_dir: Path) -> Path:
     """Write a crash report with log and environment data."""
     report_dir.mkdir(parents=True, exist_ok=True)
     log_content = ""
     if log_file and log_file.exists():
-        log_content = log_file.read_text()
+        try:
+            with log_file.open("r", encoding="utf-8", errors="replace") as fh:
+                log_content = "".join(deque(fh, maxlen=1000))
+        except Exception:
+            log_content = log_file.read_text()
     data = {
         "error": str(exc),
         "env": {
             "python": platform.python_version(),
             "platform": platform.platform(),
+            "display": _get_display_info(),
+            "is_admin": _is_admin(),
         },
         "log": log_content,
     }

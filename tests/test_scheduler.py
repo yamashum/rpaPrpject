@@ -52,6 +52,30 @@ def test_crash_report_creation(tmp_path):
     assert "before crash" in data["log"]
 
 
+def test_crash_report_tails_log_and_env(tmp_path):
+    log_file = tmp_path / "run.log"
+    log_file.write_text("\n".join(f"line{i}" for i in range(1050)))
+
+    def job():
+        log_file.write_text(log_file.read_text() + "\ncrash")
+        raise RuntimeError("boom")
+
+    reports = tmp_path / "reports"
+    s = CronScheduler()
+    s.add_job("* * * * * *", job, tmp_path / "lock", log_file=log_file, report_dir=reports)
+    s.run_pending(datetime.now())
+
+    data = json.loads(next(reports.glob("crash_*.json")).read_text())
+    lines = data["log"].splitlines()
+    assert len(lines) == 1000
+    assert "line0" not in data["log"]
+    assert lines[-1] == "crash"
+    env = data["env"]
+    assert "display" in env and "dpi" in env["display"]
+    assert "monitors" in env["display"]
+    assert "is_admin" in env
+
+
 def test_condition_callbacks_skip_job(tmp_path):
     called = False
 
