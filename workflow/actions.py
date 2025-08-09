@@ -8,6 +8,7 @@ from typing import Any
 from .flow import Step
 from .runner import ExecutionContext
 from .safe_eval import safe_eval
+from .selector import resolve as resolve_selector
 
 
 def log(step: Step, ctx: ExecutionContext) -> Any:
@@ -154,7 +155,20 @@ def prompt_select(step: Step, ctx: ExecutionContext) -> Any:
 
 
 def _stub_action(step: Step, ctx: ExecutionContext) -> Any:
-    """Placeholder for unimplemented UI actions."""
+    """Placeholder for unimplemented UI actions.
+
+    The stub uses :func:`resolve_selector` to attempt element resolution based on
+    the step's ``selector`` definition.  Successful resolutions are recorded on
+    the execution context under ``ctx.globals['learned_selectors']`` so tests can
+    verify which strategy was ultimately used.
+    """
+
+    selector = step.selector or step.params.get("selector")
+    if isinstance(selector, dict):
+        result = resolve_selector(selector)
+        strategies = ctx.globals.setdefault("learned_selectors", [])
+        strategies.append(result["strategy"])
+        return result
     print(f"{step.action} not implemented")
     return None
 
