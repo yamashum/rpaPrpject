@@ -1424,6 +1424,29 @@ def cell_set(step: Step, ctx: ExecutionContext) -> Any:
     raise ValueError("cell.set requires 'row' and 'column' or 'selector'")
 
 
+def _locate_image(
+    path: str,
+    *,
+    region=None,
+    scale=None,
+    tolerance=None,
+    dpi=None,
+):
+    """Locate an image on screen using ``pyautogui``.
+
+    This helper centralizes the actual call so different actions can share the
+    same lookup logic and optional dependencies are handled consistently.
+    """
+
+    try:  # pragma: no cover - optional dependency
+        import pyautogui  # type: ignore
+    except Exception as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("pyautogui not installed") from exc
+    return pyautogui.locateOnScreen(
+        path, region=region, scale=scale, tolerance=tolerance, dpi=dpi
+    )
+
+
 def find_image(step: Step, ctx: ExecutionContext) -> Any:
     """Locate ``path`` on screen using ``pyautogui``."""
 
@@ -1436,19 +1459,46 @@ def find_image(step: Step, ctx: ExecutionContext) -> Any:
     scale = step.params.get("scale")
     tolerance = step.params.get("tolerance")
     dpi = step.params.get("dpi")
-    try:  # pragma: no cover - optional dependency
-        import pyautogui  # type: ignore
-    except Exception as exc:  # pragma: no cover - optional dependency
-        raise RuntimeError("pyautogui not installed") from exc
     end = time.time() + timeout / 1000.0
     while time.time() < end:
-        box = pyautogui.locateOnScreen(
-            path, region=region, scale=scale, tolerance=tolerance, dpi=dpi
+        box = _locate_image(
+            path,
+            region=region,
+            scale=scale,
+            tolerance=tolerance,
+            dpi=dpi,
         )
         if box:
             return box
         time.sleep(interval)
     raise TimeoutError("image not found")
+
+
+def wait_image_disappear(step: Step, ctx: ExecutionContext) -> Any:
+    """Wait until ``path`` is no longer visible on screen."""
+
+    path = step.params.get("path") or step.params.get("image")
+    if not path:
+        raise ValueError("wait_image_disappear requires 'path'")
+    region = step.params.get("region")
+    timeout = step.params.get("timeout", 3000)
+    interval = step.params.get("interval", 0.5)
+    scale = step.params.get("scale")
+    tolerance = step.params.get("tolerance")
+    dpi = step.params.get("dpi")
+    end = time.time() + timeout / 1000.0
+    while time.time() < end:
+        box = _locate_image(
+            path,
+            region=region,
+            scale=scale,
+            tolerance=tolerance,
+            dpi=dpi,
+        )
+        if not box:
+            return True
+        time.sleep(interval)
+    raise TimeoutError("image still present")
 
 
 def ocr_read(step: Step, ctx: ExecutionContext) -> Any:
@@ -1566,6 +1616,7 @@ _UI_ACTIONS = [
     "check",
     "uncheck",
     "find_image",
+    "wait_image_disappear",
     "ocr_read",
     "click_xy",
     "table.find_row",
@@ -1601,6 +1652,7 @@ BUILTIN_ACTIONS.update(
         "type_text": type_text,
         "click_xy": click_xy,
         "find_image": find_image,
+        "wait_image_disappear": wait_image_disappear,
         "ocr_read": ocr_read,
         "table.find_row": find_table_row,
         "row.select": select_row,

@@ -50,6 +50,7 @@ ACTION_PERMISSIONS: Dict[str, str] = {
     "check": "desktop.uia",
     "uncheck": "desktop.uia",
     "find_image": "desktop.uia",
+    "wait_image_disappear": "desktop.uia",
     "ocr_read": "desktop.uia",
     "click_xy": "desktop.uia",
     "table.find_row": "desktop.uia",
