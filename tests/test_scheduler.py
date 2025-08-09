@@ -4,6 +4,7 @@ import time
 from datetime import datetime
 
 from workflow.scheduler import CronScheduler
+from workflow import scheduler
 
 
 def test_scheduler_exclusive_access(tmp_path):
@@ -66,3 +67,39 @@ def test_condition_callbacks_skip_job(tmp_path):
     s.run_pending(datetime.now())
 
     assert not called
+
+
+def test_is_vpn_connected(monkeypatch):
+    monkeypatch.setattr(scheduler.sys, "platform", "linux")
+
+    def fake_run(cmd, capture_output, text, check=False):
+        class Result:
+            stdout = "1: lo:...\n2: tun0: <POINTOPOINT>"
+
+        return Result()
+
+    monkeypatch.setattr(scheduler.subprocess, "run", fake_run)
+    assert scheduler.is_vpn_connected()
+
+
+def test_is_ac_powered(monkeypatch, tmp_path):
+    monkeypatch.setattr(scheduler.sys, "platform", "linux")
+    base = tmp_path
+    ac = base / "AC"
+    ac.mkdir()
+    (ac / "online").write_text("1")
+    monkeypatch.setattr(scheduler, "_POWER_SUPPLY_BASE", base)
+    assert scheduler.is_ac_powered()
+
+
+def test_is_screen_locked(monkeypatch):
+    monkeypatch.setattr(scheduler.sys, "platform", "linux")
+
+    def fake_run(cmd, capture_output, text, check=False):
+        class Result:
+            stdout = "The screensaver is active"
+
+        return Result()
+
+    monkeypatch.setattr(scheduler.subprocess, "run", fake_run)
+    assert scheduler.is_screen_locked()
