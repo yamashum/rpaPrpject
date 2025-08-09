@@ -13,6 +13,14 @@ def log_step(
     action: str,
     duration: float,
     result: str,
+    *,
+    host: Optional[str] = None,
+    user: Optional[str] = None,
+    dpi: Optional[int] = None,
+    monitors: Optional[Any] = None,
+    selectorUsed: Optional[Any] = None,
+    retries: Optional[int] = None,
+    fallbackUsed: Optional[bool] = None,
     redact: Optional[Iterable[str]] = None,
     **extra: Any,
 ) -> None:
@@ -32,6 +40,20 @@ def log_step(
         Duration of the step in milliseconds.
     result: str
         Result of the step (e.g. ``"ok"`` or ``"error"``).
+    host: str, optional
+        Hostname of the machine executing the step.
+    user: str, optional
+        User running the workflow.
+    dpi: int, optional
+        Screen DPI value.
+    monitors: list, optional
+        List of monitor geometries.
+    selectorUsed: any, optional
+        Selector that was ultimately used for the step.
+    retries: int, optional
+        Number of retry attempts before this execution.
+    fallbackUsed: bool, optional
+        Whether a fallback profile or selector was used.
     redact: Iterable[str], optional
         Names of fields whose values should be redacted in the log.
     extra: dict
@@ -45,8 +67,31 @@ def log_step(
         "duration": duration,
         "result": result,
     }
+    if host is not None:
+        record["host"] = host
+    if user is not None:
+        record["user"] = user
+    if dpi is not None:
+        record["dpi"] = dpi
+    if monitors is not None:
+        record["monitors"] = monitors
+    if selectorUsed is not None:
+        record["selectorUsed"] = selectorUsed
+    if retries is not None:
+        record["retries"] = retries
+    if fallbackUsed is not None:
+        record["fallbackUsed"] = fallbackUsed
     record.update(extra)
-    unmasked = {"runId", "stepId", "action", "screenshot", "uiTree", "webTrace"}
+    unmasked = {
+        "runId",
+        "stepId",
+        "action",
+        "screenshot",
+        "uiTree",
+        "webTrace",
+        "host",
+        "user",
+    }
     for k, v in list(record.items()):
         if k not in unmasked and isinstance(v, str):
             record[k] = mask_pii(v)

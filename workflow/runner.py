@@ -6,6 +6,8 @@ import json
 import time
 import os
 import fcntl
+import socket
+import getpass
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -16,6 +18,7 @@ from .safe_eval import safe_eval
 from .logging import log_step, mask_pii
 from .config import PROFILES, WAIT_PRESETS, get_profile_chain
 from .hooks import apply_screenshot_mask
+from . import scheduler
 
 # Mapping of action names to required roles
 SENSITIVE_ACTION_ROLES: Dict[str, Set[str]] = {
@@ -405,9 +408,33 @@ class Runner:
         if step.continue_flag:
             raise ContinueFlow()
 
+        host = socket.gethostname()
+        try:
+            user = getpass.getuser()
+        except Exception:
+            user = None
+        try:
+            display = scheduler._get_display_info()
+            dpi = display.get("dpi")
+            monitors = display.get("monitors")
+        except Exception:
+            dpi = None
+            monitors = []
+
         if self.skip_requested:
             self.skip_requested = False
-            log_step(self.run_id, self.run_dir, step.id, step.action, 0.0, "skipped")
+            log_step(
+                self.run_id,
+                self.run_dir,
+                step.id,
+                step.action,
+                0.0,
+                "skipped",
+                host=host,
+                user=user,
+                dpi=dpi,
+                monitors=monitors,
+            )
             print(json.dumps({"stepId": step.id, "action": step.action, "result": "skipped"}))
             return
 
@@ -494,13 +521,24 @@ class Runner:
             )
         func = self.actions.get(step.action)
         if not func:
-            log_step(self.run_id, self.run_dir, step.id, step.action, 0.0, "unknown")
+            log_step(
+                self.run_id,
+                self.run_dir,
+                step.id,
+                step.action,
+                0.0,
+                "unknown",
+                host=host,
+                user=user,
+                dpi=dpi,
+                monitors=monitors,
+            )
             return
         ctx.push_local()
         original_selector = step.selector
         last_exc: Optional[Exception] = None
         profiles = get_profile_chain(ctx.flow.defaults.envProfile)
-        for pname in profiles:
+        for profile_index, pname in enumerate(profiles):
             profile = PROFILES.get(pname)
             if profile is None:
                 continue
@@ -532,7 +570,7 @@ class Runner:
 
             selector_retry = step.selectorRetry if step.selectorRetry is not None else retry
 
-            for sel in selectors:
+            for selector_index, sel in enumerate(selectors):
                 step.selector = sel
                 for attempt in range(selector_retry + 1):
                     start = time.time()
@@ -557,6 +595,9 @@ class Runner:
                         redact = None
                         if step.action == "prompt.input" and step.params.get("mask"):
                             redact = ["output"]
+                        fallback_used = (
+                            profile_index > 0 or selector_index > 0 or attempt > 0
+                        )
                         log_step(
                             self.run_id,
                             self.run_dir,
@@ -564,6 +605,13 @@ class Runner:
                             step.action,
                             duration,
                             "ok",
+                            host=host,
+                            user=user,
+                            dpi=dpi,
+                            monitors=monitors,
+                            selectorUsed=sel,
+                            retries=attempt,
+                            fallbackUsed=fallback_used,
                             output=result,
                             redact=redact,
                         )
@@ -593,6 +641,9 @@ class Runner:
                             har=bool(oe.get("har")),
                             video=bool(oe.get("video")),
                         )
+                        fallback_used = (
+                            profile_index > 0 or selector_index > 0 or attempt > 0
+                        )
                         log_step(
                             self.run_id,
                             self.run_dir,
@@ -600,6 +651,13 @@ class Runner:
                             step.action,
                             duration,
                             "error",
+                            host=host,
+                            user=user,
+                            dpi=dpi,
+                            monitors=monitors,
+                            selectorUsed=sel,
+                            retries=attempt,
+                            fallbackUsed=fallback_used,
                             error=str(exc),
                             **artifacts,
                         )
