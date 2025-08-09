@@ -370,6 +370,16 @@ def _scroll_row_into_view(row: Any, timeout: int) -> None:
         _wait_until(lambda: bool(row.is_visible()), timeout)
 
 
+def _element_center(target: Any) -> tuple[int, int]:
+    """Return the centre coordinates of ``target``."""
+
+    x = getattr(target, "left", getattr(target, "x", 0))
+    y = getattr(target, "top", getattr(target, "y", 0))
+    w = getattr(target, "width", getattr(target, "w", 0))
+    h = getattr(target, "height", getattr(target, "h", 0))
+    return int(x + w / 2), int(y + h / 2)
+
+
 def click(step: Step, ctx: ExecutionContext) -> Any:
     """Click an element resolved from ``selector`` with retries."""
 
@@ -430,6 +440,132 @@ def double_click(step: Step, ctx: ExecutionContext) -> Any:
                 target.click()
             else:
                 raise AttributeError("target not double clickable")
+            return True
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return True
+
+
+def right_click(step: Step, ctx: ExecutionContext) -> Any:
+    """Perform a right click on the resolved element."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    for attempt in range(retries + 1):
+        resolved = _resolve_with_wait(selector, timeout)
+        target = resolved["target"]
+        try:
+            _ensure_ready(target, timeout)
+            x, y = _element_center(target)
+            try:  # pragma: no cover - optional dependency
+                import pyautogui  # type: ignore
+            except Exception as exc:  # pragma: no cover - optional dependency
+                raise RuntimeError("pyautogui not installed") from exc
+            pyautogui.rightClick(x, y)
+            return True
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return True
+
+
+def hover(step: Step, ctx: ExecutionContext) -> Any:
+    """Move the mouse cursor over the resolved element."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    x = y = 0
+    for attempt in range(retries + 1):
+        resolved = _resolve_with_wait(selector, timeout)
+        target = resolved["target"]
+        try:
+            _ensure_ready(target, timeout)
+            x, y = _element_center(target)
+            try:  # pragma: no cover - optional dependency
+                import pyautogui  # type: ignore
+            except Exception as exc:  # pragma: no cover - optional dependency
+                raise RuntimeError("pyautogui not installed") from exc
+            pyautogui.moveTo(x, y)
+            return (x, y)
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return (x, y)
+
+
+def scroll(step: Step, ctx: ExecutionContext) -> Any:
+    """Scroll over the resolved element using ``pyautogui``."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    clicks = step.params.get("clicks")
+    if clicks is None:
+        raise ValueError("scroll requires 'clicks'")
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    for attempt in range(retries + 1):
+        resolved = _resolve_with_wait(selector, timeout)
+        target = resolved["target"]
+        try:
+            _ensure_ready(target, timeout)
+            x, y = _element_center(target)
+            try:  # pragma: no cover - optional dependency
+                import pyautogui  # type: ignore
+            except Exception as exc:  # pragma: no cover - optional dependency
+                raise RuntimeError("pyautogui not installed") from exc
+            pyautogui.moveTo(x, y)
+            pyautogui.scroll(clicks)
+            return clicks
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return clicks
+
+
+def drag_drop(step: Step, ctx: ExecutionContext) -> Any:
+    """Drag the source element onto the target element."""
+
+    source_selector = step.selector or step.params.get("source")
+    target_selector = step.params.get("target") or step.params.get("destination")
+    if not source_selector or not target_selector:
+        raise ValueError("drag_drop requires 'source' and 'target'")
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    duration = step.params.get("duration", 0.5)
+    for attempt in range(retries + 1):
+        source_resolved = _resolve_with_wait(source_selector, timeout)
+        target_resolved = _resolve_with_wait(target_selector, timeout)
+        src = source_resolved["target"]
+        dst = target_resolved["target"]
+        try:
+            _ensure_ready(src, timeout)
+            _ensure_ready(dst, timeout)
+            sx, sy = _element_center(src)
+            dx, dy = _element_center(dst)
+            try:  # pragma: no cover - optional dependency
+                import pyautogui  # type: ignore
+            except Exception as exc:  # pragma: no cover - optional dependency
+                raise RuntimeError("pyautogui not installed") from exc
+            pyautogui.moveTo(sx, sy)
+            pyautogui.dragTo(dx, dy, duration=duration, button="left")
             return True
         except Exception as exc:
             msg = str(exc).lower()
@@ -849,6 +985,10 @@ _UI_ACTIONS = [
     "activate",
     "click",
     "double_click",
+    "right_click",
+    "hover",
+    "scroll",
+    "drag_drop",
     "type_text",
     "set_value",
     "select",
@@ -878,6 +1018,10 @@ BUILTIN_ACTIONS.update(
         "activate": activate,
         "click": click,
         "double_click": double_click,
+        "right_click": right_click,
+        "hover": hover,
+        "scroll": scroll,
+        "drag_drop": drag_drop,
         "select": select,
         "check": check,
         "uncheck": uncheck,
