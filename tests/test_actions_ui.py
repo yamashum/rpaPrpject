@@ -145,6 +145,65 @@ def test_find_table_row(monkeypatch):
     assert row["dept"] == "IT"
 
 
+def test_click_hit_testing_uia(monkeypatch):
+    class Elem:
+        def __init__(self):
+            self.hit_testable = False
+            self.clicked = 0
+
+        def is_visible(self):
+            return True
+
+        def is_enabled(self):
+            return True
+
+        def hit_test(self):
+            return self.hit_testable
+
+        def click(self):
+            self.clicked += 1
+
+    elem = Elem()
+    monkeypatch.setattr(actions, "resolve_selector", lambda s: {"strategy": "uia", "target": elem})
+    monkeypatch.setattr(actions.time, "sleep", lambda x: None)
+    ctx = build_ctx()
+
+    with pytest.raises(RuntimeError):
+        actions.click(Step(id="c", action="click", selector={"uia": {}}), ctx)
+
+    elem.hit_testable = True
+    actions.click(Step(id="c2", action="click", selector={"uia": {}}), ctx)
+    assert elem.clicked == 1
+
+
+def test_click_hit_testing_win32(monkeypatch):
+    class Elem:
+        def __init__(self):
+            self.hit_testable = False
+            self.clicked = 0
+
+        def is_visible(self):
+            return True
+
+        def is_enabled(self):
+            return True
+
+        def click(self):
+            self.clicked += 1
+
+    elem = Elem()
+    monkeypatch.setattr(actions, "resolve_selector", lambda s: {"strategy": "win32", "target": elem})
+    monkeypatch.setattr(actions.time, "sleep", lambda x: None)
+    ctx = build_ctx()
+
+    with pytest.raises(RuntimeError):
+        actions.click(Step(id="c", action="click", selector={"win32": {}}), ctx)
+
+    elem.hit_testable = True
+    actions.click(Step(id="c2", action="click", selector={"win32": {}}), ctx)
+    assert elem.clicked == 1
+
+
 def test_row_actions_scroll(monkeypatch):
     class Table:
         def __init__(self):
