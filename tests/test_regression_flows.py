@@ -8,6 +8,8 @@ from workflow.runner import Runner
 from tests.mocks.mock_dom import MockDOM
 from tests.mocks.mock_network import MockNetwork
 
+pytestmark = pytest.mark.regression
+
 DOM = MockDOM()
 NETWORK = MockNetwork()
 
