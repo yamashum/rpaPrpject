@@ -477,12 +477,44 @@ def uncheck(step: Step, ctx: ExecutionContext) -> Any:
 
 
 def click_xy(step: Step, ctx: ExecutionContext) -> Any:
-    """Click at absolute coordinates using ``pyautogui``."""
+    """Click at coordinates using ``pyautogui`` with optional basis.
+
+    Parameters ``x`` and ``y`` specify the coordinates. When ``basis`` is
+    ``"Element"`` or ``"Window"`` the coordinates are treated as relative to the
+    respective origin and translated to screen coordinates before the click.
+    When ``preview`` is truthy, the translated coordinates are returned without
+    performing the click.
+    """
 
     x = step.params.get("x")
     y = step.params.get("y")
     if x is None or y is None:
         raise ValueError("click_xy requires 'x' and 'y'")
+
+    basis = (step.params.get("basis") or "Screen").lower()
+    preview = step.params.get("preview", False)
+
+    if basis == "element":
+        selector = step.selector or step.params.get("selector") or {}
+        timeout = step.params.get("timeout", 3000)
+        if selector:
+            resolved = _resolve_with_wait(selector, timeout)
+            target = resolved["target"]
+            origin_x = getattr(target, "left", getattr(target, "x", 0))
+            origin_y = getattr(target, "top", getattr(target, "y", 0))
+            x += origin_x
+            y += origin_y
+    elif basis == "window":
+        window = ctx.globals.get("window")
+        if window is not None:
+            origin_x = getattr(window, "left", getattr(window, "x", 0))
+            origin_y = getattr(window, "top", getattr(window, "y", 0))
+            x += origin_x
+            y += origin_y
+
+    if preview:
+        return (x, y)
+
     try:  # pragma: no cover - optional dependency
         import pyautogui  # type: ignore
     except Exception as exc:  # pragma: no cover - optional dependency
@@ -607,13 +639,18 @@ def find_image(step: Step, ctx: ExecutionContext) -> Any:
     region = step.params.get("region")
     timeout = step.params.get("timeout", 3000)
     interval = step.params.get("interval", 0.5)
+    scale = step.params.get("scale")
+    tolerance = step.params.get("tolerance")
+    dpi = step.params.get("dpi")
     try:  # pragma: no cover - optional dependency
         import pyautogui  # type: ignore
     except Exception as exc:  # pragma: no cover - optional dependency
         raise RuntimeError("pyautogui not installed") from exc
     end = time.time() + timeout / 1000.0
     while time.time() < end:
-        box = pyautogui.locateOnScreen(path, region=region)
+        box = pyautogui.locateOnScreen(
+            path, region=region, scale=scale, tolerance=tolerance, dpi=dpi
+        )
         if box:
             return box
         time.sleep(interval)

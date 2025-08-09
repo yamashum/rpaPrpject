@@ -172,11 +172,11 @@ def test_row_actions_scroll(monkeypatch):
 
 
 def test_find_image_ocr(monkeypatch):
-    calls = []
+    calls = {}
 
-    def locate(path, region=None):
-        calls.append(1)
-        if len(calls) < 2:
+    def locate(path, region=None, scale=None, tolerance=None, dpi=None):
+        calls.setdefault("params", []).append((scale, tolerance, dpi))
+        if len(calls["params"]) < 2:
             return None
         return (1, 2, 3, 4)
 
@@ -185,11 +185,16 @@ def test_find_image_ocr(monkeypatch):
     monkeypatch.setattr(actions.time, "sleep", lambda x: None)
     ctx = build_ctx()
     box = actions.find_image(
-        Step(id="f", action="find_image", params={"path": "img.png", "timeout": 100}),
+        Step(
+            id="f",
+            action="find_image",
+            params={"path": "img.png", "timeout": 100, "scale": 2, "tolerance": 5, "dpi": 96},
+        ),
         ctx,
     )
     assert box == (1, 2, 3, 4)
-    assert len(calls) >= 2
+    # ensure custom parameters were forwarded
+    assert calls["params"][-1] == (2, 5, 96)
 
     pil = types.SimpleNamespace(Image=types.SimpleNamespace(open=lambda p: "img"))
     sys.modules["PIL"] = pil
@@ -272,4 +277,46 @@ def test_check_uncheck_click_xy(monkeypatch):
     sys.modules["pyautogui"] = types.SimpleNamespace(click=click)
     actions.click_xy(Step(id="xy", action="click_xy", params={"x": 1, "y": 2}), ctx)
     assert calls == [(1, 2)]
+
+
+def test_click_xy_basis_preview(monkeypatch):
+    ctx = build_ctx()
+
+    calls: list[tuple[int, int]] = []
+
+    def click(x, y):
+        calls.append((x, y))
+
+    sys.modules["pyautogui"] = types.SimpleNamespace(click=click)
+
+    elem = types.SimpleNamespace(left=10, top=20)
+    monkeypatch.setattr(
+        actions, "resolve_selector", lambda s: {"strategy": "mock", "target": elem}
+    )
+    actions.click_xy(
+        Step(
+            id="e",
+            action="click_xy",
+            params={"x": 1, "y": 2, "basis": "Element"},
+            selector={"mock": {}},
+        ),
+        ctx,
+    )
+    assert calls == [(11, 22)]
+
+    ctx.globals["window"] = types.SimpleNamespace(left=5, top=6)
+    calls.clear()
+    actions.click_xy(
+        Step(id="w", action="click_xy", params={"x": 1, "y": 2, "basis": "Window"}),
+        ctx,
+    )
+    assert calls == [(6, 8)]
+
+    calls.clear()
+    coords = actions.click_xy(
+        Step(id="p", action="click_xy", params={"x": 3, "y": 4, "preview": True}),
+        ctx,
+    )
+    assert coords == (3, 4)
+    assert calls == []
 
