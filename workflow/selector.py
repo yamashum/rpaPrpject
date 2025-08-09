@@ -159,14 +159,45 @@ def _extract_token(selector: str) -> str:
 
 
 def normalize_selector(selector: str) -> List[str]:
-    """Return candidate selectors prioritising ``data-testid``.
+    """Return candidate selectors ordered by stability.
 
-    The returned list always contains a selector targeting ``data-testid``
-    followed by the original selector as a fallback.
+    The function attempts to provide increasingly generic alternatives for a
+    recorded selector.  ``data-testid`` is preferred when available, followed
+    by element ``id`` selectors, CSS selectors and finally an XPath
+    representation.  The original selector is included if it differs from the
+    generated fallbacks.
     """
 
     token = _extract_token(selector)
-    return [f'[data-testid="{token}"]', selector]
+    result: List[str] = [f'[data-testid="{token}"]']
+
+    id_sel: str | None = None
+    css_sel: str | None = None
+    xpath_sel: str | None = None
+
+    if selector.strip().startswith("//"):
+        # XPath selector - extract id if present
+        xpath_sel = selector
+        import re
+        m = re.search(r"@id=['\"]([^'\"]+)['\"]", selector)
+        if m:
+            id_sel = f"#{m.group(1)}"
+    else:
+        css_sel = selector
+        import re
+        m = re.search(r"#([A-Za-z_][\w\-]*)", selector)
+        if m:
+            id_sel = f"#{m.group(1)}"
+            xpath_sel = f'//*[@id="{m.group(1)}"]'
+
+    for cand in (id_sel, css_sel, xpath_sel):
+        if cand and cand not in result:
+            result.append(cand)
+
+    if selector not in result:
+        result.append(selector)
+
+    return result
 
 
 def suggest_selector(selector: str) -> str:
@@ -174,3 +205,19 @@ def suggest_selector(selector: str) -> str:
 
     token = _extract_token(selector)
     return f'[data-testid="{token}"]'
+
+
+def analyze_selectors(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Augment recorded actions with stable selector suggestions.
+
+    For each action containing a ``"selector"`` key, a new
+    ``"selectorSuggestions"`` list is added containing the candidates returned
+    by :func:`normalize_selector`.  The input list is mutated and returned for
+    convenience.
+    """
+
+    for action in actions:
+        sel = action.get("selector")
+        if isinstance(sel, str):
+            action["selectorSuggestions"] = normalize_selector(sel)
+    return actions

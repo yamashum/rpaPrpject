@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
+from .selector import analyze_selectors
+
 try:  # pragma: no cover - optional GUI dependency
     from PyQt6.QtGui import QCursor
 except Exception:  # pragma: no cover - headless environments
@@ -71,12 +73,13 @@ def capture_coordinates(
 def record_web(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Record a sequence of web actions.
 
-    The function merely echoes the actions and serves as an integration point
-    for a future browser recorder.  Returning the list makes it convenient to
-    unit test and to directly wire into flow definitions.
+    Currently the function echoes the supplied actions but augments any
+    selectors with stable attribute suggestions via
+    :func:`selector.analyze_selectors`.  Returning the list makes it convenient
+    to unit test and to directly wire into flow definitions.
     """
 
-    return actions
+    return analyze_selectors(actions)
 
 
 def wire_to_flow(flow: Dict[str, Any], step_id: str, params: Dict[str, Any]) -> None:

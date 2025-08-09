@@ -21,3 +21,11 @@ def test_capture_coordinates_basis_preview(monkeypatch):
 
     res_preview = gui_tools.capture_coordinates(preview=True)
     assert res_preview["preview"] == (100, 200)
+
+
+def test_record_web_suggests_stable_selectors():
+    actions = [{"selector": "button#save"}]
+    result = gui_tools.record_web(actions)
+    suggestions = result[0]["selectorSuggestions"]
+    assert suggestions[0] == "[data-testid=\"save\"]"
+    assert "#save" in suggestions
