@@ -10,6 +10,9 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QHeaderView
 )
 
+# Global queue receiving actions recorded by external modules
+recorded_actions_q: "queue.Queue[dict]" = queue.Queue()
+
 # ---------- 中央キャンバス（ドット背景＋カード） ----------
 class DottedCanvas(QWidget):
     def __init__(self):
@@ -241,8 +244,10 @@ class MainWindow(QMainWindow):
         self._watcher = QFileSystemWatcher(["sample_flow.json"])
         self._watcher.fileChanged.connect(self.on_flow_updated)
 
+        # expose the global queue for convenience
+        self.recorded_actions_q = recorded_actions_q
+
         # Queue for recorded actions coming from external recorder
-        self._record_queue: queue.Queue = queue.Queue()
         self._record_timer = QTimer(self)
         self._record_timer.timeout.connect(self._process_record_queue)
         self._record_timer.start(100)
@@ -261,11 +266,11 @@ class MainWindow(QMainWindow):
         insertion on the GUI thread.
         """
 
-        self._record_queue.put(action)
+        recorded_actions_q.put(action)
 
     def _process_record_queue(self) -> None:
-        while not self._record_queue.empty():
-            action = self._record_queue.get()
+        while not recorded_actions_q.empty():
+            action = recorded_actions_q.get()
             title = action.get("action") or action.get("type") or "Recorded"
             self.add_step(action=title)
 
