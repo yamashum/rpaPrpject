@@ -114,17 +114,35 @@ def test_click_reports_overlay(monkeypatch):
 
 def test_find_table_row(monkeypatch):
     class Table:
-        def find_row(self, criteria):
-            return {"row": 1, **criteria}
+        headers = ["id", "name", "dept"]
+
+        def __init__(self):
+            self.rows = [
+                {"id": "1", "name": "Bob", "dept": "IT"},
+                {"id": "2", "name": "Alice", "dept": "HR"},
+            ]
 
     table = Table()
     monkeypatch.setattr(actions, "resolve_selector", lambda s: {"strategy": "mock", "target": table})
     ctx = build_ctx()
+
     row = actions.find_table_row(
-        Step(id="t", action="table.find_row", selector={"mock": {}}, params={"criteria": {"name": "Bob"}}),
+        Step(id="t1", action="table.find_row", selector={"mock": {}}, params={"criteria": {"name": "Bob"}}),
         ctx,
     )
-    assert row["name"] == "Bob"
+    assert row["id"] == "1"
+
+    row = actions.find_table_row(
+        Step(id="t2", action="table.find_row", selector={"mock": {}}, params={"criteria": {1: {"contains": "lic"}}}),
+        ctx,
+    )
+    assert row["name"] == "Alice"
+
+    row = actions.find_table_row(
+        Step(id="t3", action="table.find_row", selector={"mock": {}}, params={"criteria": {"dept": {"regex": "^I"}}}),
+        ctx,
+    )
+    assert row["dept"] == "IT"
 
 
 def test_row_actions_scroll(monkeypatch):
