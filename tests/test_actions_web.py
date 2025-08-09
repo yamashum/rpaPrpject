@@ -9,6 +9,8 @@ from workflow.actions_web import (
     open as web_open,
     click as web_click,
     fill as web_fill,
+    select as web_select,
+    upload as web_upload,
     wait_for as web_wait_for,
     download as web_download,
     evaluate as web_evaluate,
@@ -25,6 +27,8 @@ def test_playwright_actions(tmp_path):
     html = (
         "<html><body>"
         "<input id='name'>"
+        "<select id='sel'><option value='a'>A</option><option value='b'>B</option></select>"
+        "<input id='file' type='file'>"
         "<button id='btn' onclick=\"document.getElementById('result').textContent=document.getElementById('name').value\">Go</button>"
         "<div id='result'></div>"
         "<a id='dl' href='data:text/plain,hello' download='hello.txt'>Download</a>"
@@ -38,6 +42,27 @@ def test_playwright_actions(tmp_path):
     web_fill(Step(id="fill", action="fill", params={"selector": "#name", "value": "Alice"}), ctx)
     page = ctx.globals["_page"]
     assert page.input_value("#name") == "Alice"
+
+    web_select(
+        Step(id="sel", action="select", params={"selector": "#sel", "value": "b"}),
+        ctx,
+    )
+    assert page.input_value("#sel") == "b"
+
+    upload_file = tmp_path / "file.txt"
+    upload_file.write_text("data")
+    web_upload(
+        Step(
+            id="up",
+            action="upload",
+            params={"selector": "#file", "files": [str(upload_file)]},
+        ),
+        ctx,
+    )
+    assert (
+        page.evaluate("() => document.getElementById('file').files[0].name")
+        == "file.txt"
+    )
 
     web_click(Step(id="click", action="click", params={"selector": "#btn"}), ctx)
     web_wait_for(Step(id="wait", action="wait_for", params={"selector": "#result:has-text(\"Alice\")"}), ctx)
