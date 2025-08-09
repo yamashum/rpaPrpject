@@ -90,14 +90,26 @@ class Runner:
         self.actions[name] = func
 
     # ----- public API -----
-    def run_file(self, path: str, inputs: Optional[Dict[str, Any]] = None) -> None:
+    def run_file(self, path: str, inputs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         data = json.loads(Path(path).read_text())
         flow = Flow.from_dict(data)
-        self.run_flow(flow, inputs or {})
+        return self.run_flow(flow, inputs or {})
 
-    def run_flow(self, flow: Flow, inputs: Optional[Dict[str, Any]] = None) -> None:
+    def run_flow(self, flow: Flow, inputs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         ctx = ExecutionContext(flow, inputs or {})
         self._run_steps(flow.steps, ctx)
+        return ctx.flow_vars
+
+    def resume_flow(self, flow: Flow, start_step_id: str, checkpoint_path: Path | str) -> Dict[str, Any]:
+        state = json.loads(Path(checkpoint_path).read_text())
+        ctx = ExecutionContext(flow, {})
+        ctx.flow_vars.update(state.get("flow_vars", {}))
+        ctx.globals.update(state.get("globals", {}))
+        index = next((i for i, s in enumerate(flow.steps) if s.id == start_step_id), None)
+        if index is None:
+            return ctx.flow_vars
+        self._run_steps(flow.steps[index:], ctx)
+        return ctx.flow_vars
 
     # ----- core execution -----
     def _run_steps(self, steps: List[Step], ctx: ExecutionContext) -> None:
@@ -131,11 +143,18 @@ class Runner:
             time.sleep(0.1)
         raise TimeoutError(f"waitFor condition not met: {expr}")
 
+    def _save_context(self, step: Step, ctx: ExecutionContext) -> None:
+        state = {"globals": ctx.globals, "flow_vars": ctx.flow_vars}
+        path = self.run_dir / f"{step.id}_ctx.json"
+        path.write_text(json.dumps(state))
+
     def _run_step(self, step: Step, ctx: ExecutionContext) -> None:
         if step.break_flag:
             raise BreakFlow()
         if step.continue_flag:
             raise ContinueFlow()
+
+        self._save_context(step, ctx)
 
         if step.action == "if":
             cond = self._eval_expr(step.condition or "False", ctx)
