@@ -64,3 +64,22 @@ def test_vdi_fallback(monkeypatch):
     sel._HIT_STATS = {name: {"attempts": 0, "success": 0} for name in sel._STRATEGIES}
     result = resolve({"uia": {"exists": True}, "image": {"path": "btn.png"}})
     assert result["strategy"] == "image"
+
+
+def test_scope_is_merged_into_strategy_data():
+    result = resolve({"uia": {"exists": True}, "scope": {"process": "app", "ignored": "x"}})
+    assert result["target"]["process"] == "app"
+    assert "ignored" not in result["target"]
+
+
+def test_anyof_tries_candidates_with_scope():
+    selector = {
+        "scope": {"name": "main"},
+        "anyOf": [
+            {"uia": {"exists": False}},
+            {"win32": {"value": 1}},
+        ],
+    }
+    result = resolve(selector)
+    assert result["strategy"] == "win32"
+    assert result["target"]["name"] == "main"
