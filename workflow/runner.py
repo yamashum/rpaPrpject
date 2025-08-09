@@ -479,7 +479,13 @@ class Runner:
                     except Exception as exc:
                         last_exc = exc
                         duration = (time.time() - start) * 1000.0
-                        artifacts = self._capture_artifacts(step, exc)
+                        oe = step.onError or {}
+                        artifacts = self._capture_artifacts(
+                            step,
+                            exc,
+                            uiatree=bool(oe.get("uiatree")),
+                            web_trace=bool(oe.get("webTrace")),
+                        )
                         log_step(
                             self.run_id,
                             self.run_dir,
@@ -501,7 +507,6 @@ class Runner:
                             )
                         )
                         # ----- onError handling -----
-                        oe = step.onError or {}
                         if oe.get("screenshot"):
                             self._take_screenshot(step, ctx, exc)
                         if oe.get("recover"):
@@ -548,14 +553,29 @@ class Runner:
             )
         )
 
-    def _capture_artifacts(self, step: Step, exc: Exception) -> Dict[str, str]:
+    def _capture_artifacts(
+        self,
+        step: Step,
+        exc: Exception,
+        *,
+        uiatree: bool = False,
+        web_trace: bool = False,
+    ) -> Dict[str, str]:
         """Create placeholder artifact files for a failed step."""
         ts = int(time.time() * 1000)
+        artifacts: Dict[str, str] = {}
         screenshot_path = self.artifacts_dir / f"{step.id}_{ts}.txt"
         screenshot_path.write_text("screenshot")
-        ui_tree_path = self.artifacts_dir / f"{step.id}_{ts}_ui.json"
-        ui_tree_path.write_text(json.dumps({}))
-        return {"screenshot": str(screenshot_path), "uiTree": str(ui_tree_path)}
+        artifacts["screenshot"] = str(screenshot_path)
+        if uiatree:
+            ui_tree_path = self.artifacts_dir / f"{step.id}_{ts}_ui.json"
+            ui_tree_path.write_text(json.dumps({}))
+            artifacts["uiTree"] = str(ui_tree_path)
+        if web_trace:
+            trace_path = self.artifacts_dir / f"{step.id}_{ts}_trace.json"
+            trace_path.write_text(json.dumps([]))
+            artifacts["webTrace"] = str(trace_path)
+        return artifacts
 
     def _recover(self, recover_spec: Any, ctx: ExecutionContext) -> None:
         """Execute recovery steps specified in ``onError.recover``."""

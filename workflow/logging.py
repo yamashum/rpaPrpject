@@ -46,7 +46,7 @@ def log_step(
         "result": result,
     }
     record.update(extra)
-    unmasked = {"runId", "stepId", "action", "screenshot", "uiTree"}
+    unmasked = {"runId", "stepId", "action", "screenshot", "uiTree", "webTrace"}
     for k, v in list(record.items()):
         if k not in unmasked and isinstance(v, str):
             record[k] = mask_pii(v)
