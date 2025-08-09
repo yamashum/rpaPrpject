@@ -31,6 +31,7 @@ class Meta:
     name: str
     desc: str = ""
     permissions: List[str] = field(default_factory=list)
+    roles: Dict[str, List[str]] = field(default_factory=dict)
 
 
 @dataclass

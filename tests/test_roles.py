@@ -16,3 +16,14 @@ def test_runner_requires_role(monkeypatch):
         runner.run_flow(flow, {})
     result = runner.run_flow(flow, {"roles": ["user"], "approval_level": 1})
     assert result["ans"] == "y"
+
+
+def test_flow_requires_run_role():
+    step = Step(id="log", action="log", params={"message": "hi"})
+    flow = Flow(version="1", meta=Meta(name="t", roles={"run": ["runner"]}), steps=[step])
+    runner = Runner()
+    for name, func in BUILTIN_ACTIONS.items():
+        runner.register_action(name, func)
+    with pytest.raises(PermissionError):
+        runner.run_flow(flow, {})
+    runner.run_flow(flow, {"roles": ["runner"]})
