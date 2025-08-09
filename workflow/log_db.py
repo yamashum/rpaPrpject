@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS runs (
     start_time REAL,
     end_time REAL,
     duration REAL,
-    success INTEGER
+    success INTEGER,
+    failure_reason TEXT,
+    selector_hit_rate REAL
 );
 """
 
@@ -36,6 +38,8 @@ def log_run(
     start_time: float,
     end_time: float,
     success: bool,
+    failure_reason: str | None = None,
+    selector_hit_rate: float | None = None,
 ) -> None:
     """Record the outcome of a workflow run.
 
@@ -53,11 +57,24 @@ def log_run(
         End time in seconds since the epoch.
     success: bool
         ``True`` if the run completed successfully, ``False`` otherwise.
+    failure_reason: str, optional
+        Reason for failure if ``success`` is ``False``.
+    selector_hit_rate: float, optional
+        Ratio of successful selector resolutions during the run.
     """
     duration = end_time - start_time
     conn.execute(
-        "INSERT INTO runs (run_id, flow_name, start_time, end_time, duration, success) VALUES (?, ?, ?, ?, ?, ?)",
-        (run_id, flow_name, start_time, end_time, duration, int(success)),
+        "INSERT INTO runs (run_id, flow_name, start_time, end_time, duration, success, failure_reason, selector_hit_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            run_id,
+            flow_name,
+            start_time,
+            end_time,
+            duration,
+            int(success),
+            failure_reason,
+            selector_hit_rate,
+        ),
     )
     conn.commit()
 

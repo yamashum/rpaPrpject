@@ -63,15 +63,29 @@ def test_on_error_continue_skips_exception():
     assert ctx.get_var("y") == 5
 
 
-def test_on_error_uiatree_webtrace(monkeypatch):
-    step = Step(id="s", action="fail", onError={"uiatree": True, "webTrace": True})
+def test_on_error_uiatree_webtrace_har_video(monkeypatch):
+    step = Step(
+        id="s",
+        action="fail",
+        onError={"uiatree": True, "webTrace": True, "har": True, "video": True},
+    )
     ctx = make_ctx(step)
     runner = build_runner()
     called = {}
 
-    def fake_capture(step, exc, *, uiatree=False, web_trace=False):
+    def fake_capture(
+        step,
+        exc,
+        *,
+        uiatree=False,
+        web_trace=False,
+        har=False,
+        video=False,
+    ):
         called["uiatree"] = uiatree
         called["web_trace"] = web_trace
+        called["har"] = har
+        called["video"] = video
         return {}
 
     monkeypatch.setattr(runner, "_capture_artifacts", fake_capture)
@@ -81,10 +95,16 @@ def test_on_error_uiatree_webtrace(monkeypatch):
 
     assert called.get("uiatree") is True
     assert called.get("web_trace") is True
+    assert called.get("har") is True
+    assert called.get("video") is True
 
 
 def test_on_error_uiatree_webtrace_files(tmp_path):
-    step = Step(id="s", action="fail", onError={"uiatree": True, "webTrace": True})
+    step = Step(
+        id="s",
+        action="fail",
+        onError={"uiatree": True, "webTrace": True, "har": True, "video": True},
+    )
     ctx = make_ctx(step)
     runner = Runner(base_dir=tmp_path)
     for name, func in BUILTIN_ACTIONS.items():
@@ -96,6 +116,10 @@ def test_on_error_uiatree_webtrace_files(tmp_path):
 
     ui_files = list(runner.artifacts_dir.glob("*_ui.json"))
     trace_files = list(runner.artifacts_dir.glob("*_trace.json"))
+    har_files = list(runner.artifacts_dir.glob("*.har"))
+    video_files = list(runner.artifacts_dir.glob("*_video.mp4"))
     assert ui_files
     assert trace_files
+    assert har_files
+    assert video_files
 
