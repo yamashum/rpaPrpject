@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
 import time
-from typing import Any
+from typing import Any, Callable, Dict
 
 from .flow import Step
 from .runner import ExecutionContext
@@ -154,6 +155,181 @@ def prompt_select(step: Step, ctx: ExecutionContext) -> Any:
     raise ValueError("invalid selection")
 
 
+# ----- UI helpers and actions -------------------------------------------------
+
+
+def _wait_until(predicate: Callable[[], bool], timeout_ms: int, interval: float = 0.1) -> bool:
+    """Poll ``predicate`` until it returns True or timeout expires."""
+
+    end = time.time() + timeout_ms / 1000.0
+    while time.time() < end:
+        try:
+            if predicate():
+                return True
+        except Exception:
+            pass
+        time.sleep(interval)
+    return False
+
+
+def _resolve_with_wait(selector: Dict[str, Any], timeout_ms: int) -> Dict[str, Any]:
+    """Resolve a selector retrying until it succeeds or times out."""
+
+    end = time.time() + timeout_ms / 1000.0
+    last_exc: Exception | None = None
+    while time.time() < end:
+        try:
+            return resolve_selector(selector)
+        except Exception as exc:
+            last_exc = exc
+            time.sleep(0.1)
+    if last_exc:
+        raise last_exc
+    raise TimeoutError("element not found")
+
+
+def launch(step: Step, ctx: ExecutionContext) -> Any:
+    """Launch an application specified by ``path`` and optional ``args``."""
+
+    path = step.params.get("path") or step.params.get("cmd")
+    if not path:
+        raise ValueError("launch requires 'path'")
+    args = step.params.get("args", [])
+    if isinstance(args, str):
+        args = [args]
+    proc = subprocess.Popen([path, *args])
+    return proc.pid
+
+
+def activate(step: Step, ctx: ExecutionContext) -> Any:
+    """Bring a window matching ``selector`` to the foreground."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    resolved = _resolve_with_wait(selector, timeout)
+    target = resolved["target"]
+    if hasattr(target, "activate"):
+        target.activate()
+    return True
+
+
+def _ensure_ready(target: Any, timeout: int) -> None:
+    """Wait until the element is visible and enabled."""
+
+    if hasattr(target, "is_visible"):
+        if not _wait_until(lambda: target.is_visible(), timeout):
+            raise TimeoutError("element not visible")
+    if hasattr(target, "is_enabled"):
+        if not _wait_until(lambda: target.is_enabled(), timeout):
+            raise TimeoutError("element not enabled")
+
+
+def click(step: Step, ctx: ExecutionContext) -> Any:
+    """Click an element resolved from ``selector`` with retries."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    for attempt in range(retries + 1):
+        resolved = _resolve_with_wait(selector, timeout)
+        target = resolved["target"]
+        try:
+            _ensure_ready(target, timeout)
+            if hasattr(target, "click"):
+                target.click()
+                return True
+            raise AttributeError("target not clickable")
+        except Exception:
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return True
+
+
+def set_value(step: Step, ctx: ExecutionContext) -> Any:
+    """Set text/value on an element specified by ``selector``."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    value = step.params.get("value", "")
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    for attempt in range(retries + 1):
+        resolved = _resolve_with_wait(selector, timeout)
+        target = resolved["target"]
+        try:
+            _ensure_ready(target, timeout)
+            if hasattr(target, "set_text"):
+                target.set_text(value)
+            elif hasattr(target, "type_text"):
+                target.type_text(value)
+            else:
+                raise AttributeError("target not editable")
+            return value
+        except Exception:
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return value
+
+
+def type_text(step: Step, ctx: ExecutionContext) -> Any:
+    """Alias for :func:`set_value`."""
+
+    return set_value(step, ctx)
+
+
+def find_table_row(step: Step, ctx: ExecutionContext) -> Any:
+    """Return the first table row matching ``criteria``."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    criteria = step.params.get("criteria", {})
+    timeout = step.params.get("timeout", 3000)
+    resolved = _resolve_with_wait(selector, timeout)
+    table = resolved["target"]
+    if not hasattr(table, "find_row"):
+        raise AttributeError("target has no find_row")
+    return table.find_row(criteria)
+
+
+def find_image(step: Step, ctx: ExecutionContext) -> Any:
+    """Locate ``path`` on screen using ``pyautogui``."""
+
+    path = step.params.get("path") or step.params.get("image")
+    if not path:
+        raise ValueError("find_image requires 'path'")
+    region = step.params.get("region")
+    timeout = step.params.get("timeout", 3000)
+    interval = step.params.get("interval", 0.5)
+    try:  # pragma: no cover - optional dependency
+        import pyautogui  # type: ignore
+    except Exception as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("pyautogui not installed") from exc
+    end = time.time() + timeout / 1000.0
+    while time.time() < end:
+        box = pyautogui.locateOnScreen(path, region=region)
+        if box:
+            return box
+        time.sleep(interval)
+    raise TimeoutError("image not found")
+
+
+def ocr_read(step: Step, ctx: ExecutionContext) -> Any:
+    """Run OCR on an image at ``path`` using ``pytesseract``."""
+
+    path = step.params.get("path")
+    if not path:
+        raise ValueError("ocr_read requires 'path'")
+    lang = step.params.get("lang", "eng")
+    try:  # pragma: no cover - optional dependency
+        from PIL import Image  # type: ignore
+        import pytesseract  # type: ignore
+    except Exception as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("pytesseract not installed") from exc
+    img = Image.open(path)
+    text = pytesseract.image_to_string(img, lang=lang)
+    return text.strip()
+
+
 def _stub_action(step: Step, ctx: ExecutionContext) -> Any:
     """Placeholder for unimplemented UI actions.
 
@@ -203,6 +379,20 @@ _UI_ACTIONS = [
 
 for _name in _UI_ACTIONS:
     BUILTIN_ACTIONS[_name] = _stub_action
+
+# Concrete implementations overriding stubs
+BUILTIN_ACTIONS.update(
+    {
+        "launch": launch,
+        "activate": activate,
+        "click": click,
+        "set_value": set_value,
+        "type_text": type_text,
+        "find_image": find_image,
+        "ocr_read": ocr_read,
+        "table.find_row": find_table_row,
+    }
+)
 
 from .actions_web import WEB_ACTIONS
 from .actions_office import OFFICE_ACTIONS
