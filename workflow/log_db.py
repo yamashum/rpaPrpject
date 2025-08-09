@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Union
+from typing import Dict, Iterable, Tuple, Union
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -16,6 +16,12 @@ CREATE TABLE IF NOT EXISTS runs (
     failure_reason TEXT,
     selector_hit_rate REAL
 );
+
+CREATE TABLE IF NOT EXISTS selector_stats (
+    selector TEXT PRIMARY KEY,
+    success_count INTEGER DEFAULT 0,
+    failure_count INTEGER DEFAULT 0
+);
 """
 
 def init_db(db_path: Union[str, Path]) -> sqlite3.Connection:
@@ -27,7 +33,7 @@ def init_db(db_path: Union[str, Path]) -> sqlite3.Connection:
         Location of the SQLite database file. Use ":memory:" for an in-memory DB.
     """
     conn = sqlite3.connect(str(db_path))
-    conn.execute(SCHEMA)
+    conn.executescript(SCHEMA)
     conn.commit()
     return conn
 
@@ -89,3 +95,77 @@ def get_average_duration(conn: sqlite3.Connection) -> float:
     cur = conn.execute("SELECT AVG(duration) FROM runs")
     row = cur.fetchone()
     return row[0] if row and row[0] is not None else 0.0
+
+
+# ----- additional statistics helpers -----
+def log_selector_result(conn: sqlite3.Connection, selector: str, success: bool) -> None:
+    """Accumulate statistics for a selector.
+
+    Each call increments either the success or failure count for the given
+    ``selector``. The table keeps running totals, allowing callers to compute
+    success rates across multiple runs.
+    """
+
+    conn.execute(
+        "INSERT INTO selector_stats(selector, success_count, failure_count) VALUES (?, ?, ?) "
+        "ON CONFLICT(selector) DO UPDATE SET success_count = success_count + ?, failure_count = failure_count + ?",
+        (
+            selector,
+            1 if success else 0,
+            0 if success else 1,
+            1 if success else 0,
+            0 if success else 1,
+        ),
+    )
+    conn.commit()
+
+
+def get_selector_success_rates(conn: sqlite3.Connection) -> Dict[str, float]:
+    """Return success rate per selector.
+
+    Returns a mapping of selector string to a float between ``0`` and ``1``.
+    """
+
+    cur = conn.execute(
+        "SELECT selector, success_count, failure_count FROM selector_stats"
+    )
+    rates: Dict[str, float] = {}
+    for selector, s_cnt, f_cnt in cur.fetchall():
+        total = s_cnt + f_cnt
+        rates[selector] = (s_cnt / total) if total else 0.0
+    return rates
+
+
+def get_failure_counts(conn: sqlite3.Connection) -> Dict[str, int]:
+    """Return a mapping of failure reason to occurrence count."""
+
+    cur = conn.execute(
+        "SELECT failure_reason, COUNT(*) FROM runs WHERE success = 0 GROUP BY failure_reason"
+    )
+    return {reason or "unknown": count for reason, count in cur.fetchall()}
+
+
+def get_run_counts_by_period(
+    conn: sqlite3.Connection, period: str
+) -> Iterable[Tuple[str, int]]:
+    """Return run counts grouped by time period.
+
+    Parameters
+    ----------
+    period: str
+        One of ``'day'``, ``'week'`` or ``'month'``.
+    """
+
+    if period == "day":
+        expr = "date(start_time, 'unixepoch')"
+    elif period == "week":
+        expr = "strftime('%Y-%W', start_time, 'unixepoch')"
+    elif period == "month":
+        expr = "strftime('%Y-%m', start_time, 'unixepoch')"
+    else:  # pragma: no cover - defensive programming
+        raise ValueError("period must be 'day', 'week' or 'month'")
+
+    cur = conn.execute(
+        f"SELECT {expr} AS p, COUNT(*) FROM runs GROUP BY p ORDER BY p"
+    )
+    return cur.fetchall()
