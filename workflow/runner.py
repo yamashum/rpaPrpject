@@ -520,6 +520,8 @@ class Runner:
                             exc,
                             uiatree=bool(oe.get("uiatree")),
                             web_trace=bool(oe.get("webTrace")),
+                            har=bool(oe.get("har")),
+                            video=bool(oe.get("video")),
                         )
                         log_step(
                             self.run_id,
@@ -595,6 +597,8 @@ class Runner:
         *,
         uiatree: bool = False,
         web_trace: bool = False,
+        har: bool = False,
+        video: bool = False,
     ) -> Dict[str, str]:
         """Create placeholder artifact files for a failed step."""
         ts = int(time.time() * 1000)
@@ -610,6 +614,14 @@ class Runner:
             trace_path = self.artifacts_dir / f"{step.id}_{ts}_trace.json"
             trace_path.write_text(json.dumps([]))
             artifacts["webTrace"] = str(trace_path)
+        if har:
+            har_path = self.artifacts_dir / f"{step.id}_{ts}.har"
+            har_path.write_text(json.dumps({}))
+            artifacts["har"] = str(har_path)
+        if video:
+            video_path = self.artifacts_dir / f"{step.id}_{ts}_video.mp4"
+            video_path.write_text("video")
+            artifacts["video"] = str(video_path)
         return artifacts
 
     def _recover(self, recover_spec: Any, ctx: ExecutionContext) -> None:
