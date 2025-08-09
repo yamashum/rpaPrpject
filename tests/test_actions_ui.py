@@ -63,6 +63,55 @@ def test_click_set_value(monkeypatch):
     assert elem.text == "hi"
 
 
+def test_click_waits_for_overlay(monkeypatch):
+    """_ensure_ready should wait until any overlay disappears before clicking."""
+
+    class Elem:
+        def __init__(self):
+            self.overlay_calls = 0
+            self.clicked = 0
+
+        def is_visible(self):
+            return True
+
+        def is_enabled(self):
+            return True
+
+        def has_overlay(self):
+            self.overlay_calls += 1
+            return self.overlay_calls < 2
+
+        def click(self):
+            self.clicked += 1
+
+    elem = Elem()
+    monkeypatch.setattr(actions, "resolve_selector", lambda s: {"strategy": "mock", "target": elem})
+    monkeypatch.setattr(actions.time, "sleep", lambda x: None)
+    ctx = build_ctx()
+    actions.click(Step(id="c", action="click", selector={"mock": {}}), ctx)
+    assert elem.clicked == 1
+    # has_overlay should have been queried until it returned False
+    assert elem.overlay_calls >= 2
+
+
+def test_click_reports_overlay(monkeypatch):
+    class Elem:
+        def is_visible(self):
+            return True
+
+        def is_enabled(self):
+            return True
+
+        def click(self):
+            raise Exception("overlay")
+
+    elem = Elem()
+    monkeypatch.setattr(actions, "resolve_selector", lambda s: {"strategy": "mock", "target": elem})
+    ctx = build_ctx()
+    with pytest.raises(RuntimeError):
+        actions.click(Step(id="c", action="click", selector={"mock": {}}), ctx)
+
+
 def test_find_table_row(monkeypatch):
     class Table:
         def find_row(self, criteria):
