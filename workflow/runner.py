@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+import os
 import fcntl
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -206,6 +207,23 @@ class Runner:
         self._run_steps(flow.steps[index:], ctx)
         return ctx.flow_vars
 
+    # ----- secure desktop / UAC handling -----
+    def _has_uac_prompt(self) -> bool:
+        return os.getenv("UAC_PROMPT", "").lower() in {"1", "true", "yes"}
+
+    def _is_secure_desktop(self) -> bool:
+        return os.getenv("SECURE_DESKTOP", "").lower() in {"1", "true", "yes"}
+
+    def _handle_secure_desktop(self) -> None:
+        if self._has_uac_prompt():
+            print(json.dumps({"event": "uacPrompt"}))
+            while self._has_uac_prompt():
+                time.sleep(0.1)
+        if self._is_secure_desktop():
+            print(json.dumps({"event": "secureDesktop"}))
+            while self._is_secure_desktop():
+                time.sleep(0.1)
+
     # ----- core execution -----
     def _run_steps(self, steps: List[Step], ctx: ExecutionContext) -> None:
         for step in steps:
@@ -260,6 +278,7 @@ class Runner:
             raise ContinueFlow()
 
         self._save_context(step, ctx)
+        self._handle_secure_desktop()
 
         if step.action == "if":
             cond = self._eval_expr(step.condition or "False", ctx)
