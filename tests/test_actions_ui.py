@@ -105,3 +105,78 @@ def test_find_image_ocr(monkeypatch):
     text = actions.ocr_read(Step(id="o", action="ocr_read", params={"path": "img.png"}), ctx)
     assert text == "text"
 
+
+def test_attach_double_click_select(monkeypatch):
+    class Elem:
+        def __init__(self):
+            self.double_clicked = 0
+            self.selected = None
+
+        def is_visible(self):
+            return True
+
+        def is_enabled(self):
+            return True
+
+        def double_click(self):
+            self.double_clicked += 1
+
+        def select(self, item):
+            self.selected = item
+
+    elem = Elem()
+    monkeypatch.setattr(actions, "resolve_selector", lambda s: {"strategy": "mock", "target": elem})
+    ctx = build_ctx()
+    attached = actions.attach(Step(id="a", action="attach", selector={"mock": {}}), ctx)
+    assert attached["target"] is elem
+    actions.double_click(Step(id="d", action="double_click", selector={"mock": {}}), ctx)
+    assert elem.double_clicked == 1
+    actions.select(
+        Step(id="s", action="select", selector={"mock": {}}, params={"item": "foo"}),
+        ctx,
+    )
+    assert elem.selected == "foo"
+
+
+def test_check_uncheck_click_xy(monkeypatch):
+    class Elem:
+        def __init__(self, state=False):
+            self.state = state
+            self.check_calls = 0
+            self.uncheck_calls = 0
+
+        def is_visible(self):
+            return True
+
+        def is_enabled(self):
+            return True
+
+        def is_checked(self):
+            return self.state
+
+        def check(self):
+            self.state = True
+            self.check_calls += 1
+
+        def uncheck(self):
+            self.state = False
+            self.uncheck_calls += 1
+
+    elem = Elem(state=False)
+    monkeypatch.setattr(actions, "resolve_selector", lambda s: {"strategy": "mock", "target": elem})
+    ctx = build_ctx()
+    actions.check(Step(id="c", action="check", selector={"mock": {}}), ctx)
+    assert elem.state is True and elem.check_calls == 1
+    elem.state = True
+    actions.uncheck(Step(id="u", action="uncheck", selector={"mock": {}}), ctx)
+    assert elem.state is False and elem.uncheck_calls == 1
+
+    calls = []
+
+    def click(x, y):
+        calls.append((x, y))
+
+    sys.modules["pyautogui"] = types.SimpleNamespace(click=click)
+    actions.click_xy(Step(id="xy", action="click_xy", params={"x": 1, "y": 2}), ctx)
+    assert calls == [(1, 2)]
+
