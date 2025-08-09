@@ -15,12 +15,20 @@ from .flow import Flow, Step
 from .safe_eval import safe_eval
 from .logging import log_step, mask_pii
 from .config import PROFILES, WAIT_PRESETS, get_profile_chain
+from .hooks import apply_screenshot_mask
 
 # Mapping of action names to required roles
 SENSITIVE_ACTION_ROLES: Dict[str, Set[str]] = {
     "prompt.input": {"user"},
     "prompt.confirm": {"user"},
     "prompt.select": {"user"},
+}
+
+# Mapping of action names to required approval levels
+SENSITIVE_ACTION_APPROVALS: Dict[str, int] = {
+    "prompt.input": 1,
+    "prompt.confirm": 1,
+    "prompt.select": 1,
 }
 
 # Mapping of action names to required permissions
@@ -66,6 +74,7 @@ class ExecutionContext:
     inputs: Dict[str, Any]
     globals: Dict[str, Any] = field(default_factory=dict)
     roles: Set[str] = field(default_factory=set)
+    approval_level: int = 0
 
     def __post_init__(self) -> None:
         self.flow_vars = dict(self.flow.inputs)
@@ -84,6 +93,25 @@ class ExecutionContext:
             self.roles = set(roles_input)
         elif isinstance(roles_input, str):
             self.roles = {roles_input}
+        level_input = self.inputs.get("approval_level")
+        if isinstance(level_input, int):
+            self.approval_level = level_input
+        elif isinstance(level_input, str) and level_input.isdigit():
+            self.approval_level = int(level_input)
+
+    def require_roles(self, required: Set[str]) -> None:
+        """Ensure that ``required`` roles are present."""
+        if required and not required.issubset(self.roles):
+            raise PermissionError(
+                f"Action requires roles {sorted(required)}"
+            )
+
+    def require_approval(self, level: int) -> None:
+        """Ensure that the approval level is at least ``level``."""
+        if level > self.approval_level:
+            raise PermissionError(
+                f"Action requires approval level {level}"
+            )
 
     # ----- variable helpers -----
     def push_local(self, initial: Optional[Dict[str, Any]] = None) -> None:
@@ -416,10 +444,9 @@ class Runner:
 
         # actual action
         required = SENSITIVE_ACTION_ROLES.get(step.action, set())
-        if required and not required.issubset(ctx.roles):
-            raise PermissionError(
-                f"Action '{step.action}' requires roles {sorted(required)}"
-            )
+        ctx.require_roles(required)
+        required_level = SENSITIVE_ACTION_APPROVALS.get(step.action, 0)
+        ctx.require_approval(required_level)
         required_perm = ACTION_PERMISSIONS.get(step.action)
         if required_perm and required_perm not in ctx.allowed_permissions:
             raise PermissionError(
@@ -613,8 +640,9 @@ class Runner:
         """
         ts = int(time.time() * 1000)
         artifacts: Dict[str, str] = {}
-        screenshot_path = self.artifacts_dir / f"{step.id}_{ts}.txt"
-        screenshot_path.write_text("screenshot")
+        screenshot_path = self.artifacts_dir / f"{step.id}_{ts}.png"
+        data = apply_screenshot_mask(b"screenshot")
+        screenshot_path.write_bytes(data)
         artifacts["screenshot"] = str(screenshot_path)
         if uiatree:
             ui_tree_path = self.artifacts_dir / f"{step.id}_{ts}_ui.json"
