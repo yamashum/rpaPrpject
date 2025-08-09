@@ -25,7 +25,7 @@ def set_var(step: Step, ctx: ExecutionContext) -> Any:
     value = value_expr
     if isinstance(value_expr, str):
         env = ctx.all_vars()
-        value = safe_eval(value_expr, {"vars": env, **env})
+        value = safe_eval(value_expr, env)
     ctx.set_var(name, value, scope=scope)
     return value
 
