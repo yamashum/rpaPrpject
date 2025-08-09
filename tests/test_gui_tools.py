@@ -41,10 +41,16 @@ def test_element_spy_highlight_and_anchor(monkeypatch):
         gui_tools, "register_anchor", lambda sel: calls.append(("anchor", sel))
     )
 
-    info = gui_tools.element_spy("#login")
+    info = gui_tools.element_spy("#login", text="Login")
     assert info.selector == "#login"
+    assert info.automation_id and info.name and info.control_type and info.class_name
+    assert isinstance(info.hierarchy, list)
     assert ("highlight", "#login") in calls
     assert ("anchor", "#login") in calls
+
+    rows = gui_tools.format_spy_result(info)
+    keys = [k for k, _ in rows]
+    assert "AutomationId" in keys and "Hierarchy" in keys
 
 
 def test_record_web_normalises_and_wires():
