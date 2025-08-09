@@ -17,6 +17,8 @@ def test_outlook_actions(monkeypatch):
     session.OpenSharedItem.return_value = item
     app.Session = session
     app.Application.Run = MagicMock()
+    item.Send = MagicMock()
+    session.SendAndReceive = MagicMock()
     monkeypatch.setattr(outlook, "win32", MagicMock(Dispatch=lambda prog_id: app))
 
     ctx = build_ctx()
@@ -29,3 +31,11 @@ def test_outlook_actions(monkeypatch):
 
     outlook.outlook_run_macro(Step(id="macro", action="outlook.run_macro", params={"name": "Macro1"}), ctx)
     app.Application.Run.assert_called_once_with("Macro1")
+
+    outlook.outlook_send(Step(id="send", action="outlook.send", params={}), ctx)
+    item.Send.assert_called_once()
+
+    outlook.outlook_send_receive(
+        Step(id="sr", action="outlook.send_receive", params={}), ctx
+    )
+    session.SendAndReceive.assert_called_once_with(False)

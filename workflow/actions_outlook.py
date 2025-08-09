@@ -48,8 +48,24 @@ def outlook_run_macro(step: Step, ctx: ExecutionContext) -> Any:
     return app.Application.Run(macro)
 
 
+def outlook_send(step: Step, ctx: ExecutionContext) -> Any:
+    """Send the currently opened Outlook item."""
+    item = ctx.globals[_OUTLOOK_ITEM]
+    item.Send()
+    return True
+
+
+def outlook_send_receive(step: Step, ctx: ExecutionContext) -> Any:
+    """Trigger a send/receive operation."""
+    app = ctx.globals[_OUTLOOK_APP]
+    app.Session.SendAndReceive(False)
+    return True
+
+
 OUTLOOK_ACTIONS = {
     "outlook.open": outlook_open,
     "outlook.save": outlook_save,
     "outlook.run_macro": outlook_run_macro,
+    "outlook.send": outlook_send,
+    "outlook.send_receive": outlook_send_receive,
 }
