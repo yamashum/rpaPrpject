@@ -19,6 +19,7 @@ from .logging import log_step, mask_pii
 from .config import PROFILES, WAIT_PRESETS, get_profile_chain
 from .hooks import apply_screenshot_mask
 from . import scheduler
+from .flow_signature import verify_flow
 
 # Mapping of action names to required roles
 SENSITIVE_ACTION_ROLES: Dict[str, Set[str]] = {
@@ -258,7 +259,12 @@ ActionFunc = Callable[[Step, ExecutionContext], Any]
 class Runner:
     """Execute a :class:`Flow` step by step."""
 
-    def __init__(self, run_id: Optional[str] = None, base_dir: Path | str = Path("runs")) -> None:
+    def __init__(
+        self,
+        run_id: Optional[str] = None,
+        base_dir: Path | str = Path("runs"),
+        signature_key: bytes | None = None,
+    ) -> None:
         self.actions: Dict[str, ActionFunc] = {}
         self.paused = False
         self.stopped = False
@@ -271,6 +277,7 @@ class Runner:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.artifacts_dir = self.run_dir / "artifacts"
         self.artifacts_dir.mkdir(exist_ok=True)
+        self.signature_key = signature_key
 
     def _acquire_lock(self) -> None:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -295,11 +302,22 @@ class Runner:
 
     # ----- public API -----
     def run_file(self, path: str, inputs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if self.signature_key is not None:
+            if not verify_flow(path, self.signature_key):
+                raise ValueError("invalid flow signature")
         data = json.loads(Path(path).read_text())
         flow = Flow.from_dict(data)
-        return self.run_flow(flow, inputs or {})
+        return self.run_flow(flow, inputs or {}, path)
 
-    def run_flow(self, flow: Flow, inputs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def run_flow(
+        self,
+        flow: Flow,
+        inputs: Optional[Dict[str, Any]] = None,
+        path: Path | str | None = None,
+    ) -> Dict[str, Any]:
+        if self.signature_key is not None:
+            if path is None or not verify_flow(path, self.signature_key):
+                raise ValueError("invalid flow signature")
         self._acquire_lock()
         try:
             ctx = ExecutionContext(flow, inputs or {})
