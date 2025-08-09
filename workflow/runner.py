@@ -151,6 +151,7 @@ class Runner:
         self.actions: Dict[str, ActionFunc] = {}
         self.paused = False
         self.stopped = False
+        self.skip_requested = False
         self.run_id = run_id or str(int(time.time() * 1000))
         self.base_dir = Path(base_dir)
         self.lock_path = self.base_dir / "runner.lock"
@@ -296,6 +297,12 @@ class Runner:
         if step.continue_flag:
             raise ContinueFlow()
 
+        if self.skip_requested:
+            self.skip_requested = False
+            log_step(self.run_id, self.run_dir, step.id, step.action, 0.0, "skipped")
+            print(json.dumps({"stepId": step.id, "action": step.action, "result": "skipped"}))
+            return
+
         self._save_context(step, ctx)
         self._handle_secure_desktop()
 
@@ -432,6 +439,9 @@ class Runner:
                             )
                         if step.out:
                             ctx.set_var(step.out, result, scope="flow")
+                        redact = None
+                        if step.action == "prompt.input" and step.params.get("mask"):
+                            redact = ["output"]
                         log_step(
                             self.run_id,
                             self.run_dir,
@@ -440,14 +450,16 @@ class Runner:
                             duration,
                             "ok",
                             output=result,
+                            redact=redact,
                         )
+                        display = "***" if redact else result
                         print(
                             json.dumps(
                                 {
                                     "stepId": step.id,
                                     "action": step.action,
                                     "result": "ok",
-                                    "output": result,
+                                    "output": display,
                                 }
                             )
                         )
@@ -506,6 +518,9 @@ class Runner:
     def stop(self) -> None:
         self.stopped = True
         self._release_lock()
+
+    def skip(self) -> None:
+        self.skip_requested = True
 
     # ----- error helpers -----
     def _take_screenshot(self, step: Step, ctx: ExecutionContext, exc: Exception) -> None:

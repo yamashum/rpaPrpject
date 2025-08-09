@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+import getpass
 from typing import Any, Callable, Dict
 
 from .flow import Step
@@ -48,13 +49,19 @@ def prompt_input(step: Step, ctx: ExecutionContext) -> Any:
         Message shown to the user.
     default: Any, optional
         Default value if the user provides empty input.
+    mask: bool, optional
+        When ``True``, the user's input is not echoed back to the console.
     """
     message = step.params.get("message", "")
     default = step.params.get("default")
+    mask = step.params.get("mask", False)
     prompt = f"{message} " if message else ""
     if default is not None:
         prompt += f"[{default}] "
-    value = input(prompt)
+    if mask:
+        value = getpass.getpass(prompt)
+    else:
+        value = input(prompt)
     if value == "" and default is not None:
         value = default
     return value
