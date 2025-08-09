@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 
 pytest.importorskip("playwright.sync_api")
 
@@ -44,5 +45,54 @@ def test_playwright_actions(tmp_path):
     web_download(Step(id="dl", action="download", params={"selector": "#dl", "path": str(dl_path)}), ctx)
     assert dl_path.exists()
 
+    ctx.globals["_browser"].close()
+    ctx.globals["_playwright"].stop()
+
+
+def test_frame_scoping_and_data_testid(tmp_path):
+    inner = tmp_path / "inner.html"
+    inner.write_text(
+        "<body>"
+        "<button id='a'>A</button>"
+        "<button id='b' data-testid='button' onclick=\"document.body.setAttribute('data-clicked','b')\">B</button>"
+        "</body>"
+    )
+    outer = tmp_path / "outer.html"
+    outer.write_text(
+        f"<html><body><iframe id='f' src='{inner.as_uri()}'></iframe></body></html>"
+    )
+    ctx = build_ctx()
+    web_open(Step(id="open", action="open", params={"url": outer.as_uri()}), ctx)
+    web_click(Step(id="c", action="click", params={"selector": "button", "frame": "#f"}), ctx)
+    web_wait_for(
+        Step(id="w", action="wait_for", params={"selector": "body[data-clicked='b']", "frame": "#f"}),
+        ctx,
+    )
+    frame_body = ctx.globals["_page"].frame_locator("#f").locator("body")
+    assert frame_body.get_attribute("data-clicked") == "b"
+    ctx.globals["_browser"].close()
+    ctx.globals["_playwright"].stop()
+
+
+def test_download_verification(tmp_path):
+    html = (
+        "<html><body>"
+        "<a data-testid='dl' href='data:text/plain,hello' download='hello.txt'>Download</a>"
+        "</body></html>"
+    )
+    page_file = tmp_path / "index.html"
+    page_file.write_text(html)
+    ctx = build_ctx()
+    web_open(Step(id="open", action="open", params={"url": page_file.as_uri()}), ctx)
+    # Without explicit path
+    tmp_path_str = web_download(Step(id="dl1", action="download", params={"selector": "dl"}), ctx)
+    tmp_file = Path(tmp_path_str)
+    assert tmp_file.exists() and tmp_file.read_text() == "hello"
+    # With explicit path
+    dest = tmp_path / "hello.txt"
+    web_download(
+        Step(id="dl2", action="download", params={"selector": "dl", "path": str(dest)}), ctx
+    )
+    assert dest.exists() and dest.read_text() == "hello"
     ctx.globals["_browser"].close()
     ctx.globals["_playwright"].stop()

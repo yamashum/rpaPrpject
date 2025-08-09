@@ -3,6 +3,7 @@ import pytest
 from workflow.actions import BUILTIN_ACTIONS
 from workflow.flow import Step, Flow, Meta
 from workflow.runner import ExecutionContext
+from workflow.selector import normalize_selector, suggest_selector
 
 
 def make_context():
@@ -17,3 +18,8 @@ def test_fallback_to_image_selector():
     result = BUILTIN_ACTIONS["attach"](step, ctx)
     assert result["strategy"] == "image"
     assert ctx.globals["learned_selectors"] == ["image"]
+
+
+def test_selector_normalization_and_suggestion():
+    assert normalize_selector("#save") == ["[data-testid=\"save\"]", "#save"]
+    assert suggest_selector("button#save") == "[data-testid=\"save\"]"
