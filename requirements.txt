@@ -1,3 +1,4 @@
 imageio>=2.0
 Pillow>=9.0
 numpy>=1.26
+watchdog>=3.0

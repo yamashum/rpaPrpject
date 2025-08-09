@@ -1,7 +1,8 @@
+import os
 import sys
 from datetime import datetime
 import queue
-from PyQt6.QtCore import Qt, QFileSystemWatcher, QTimer
+from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
@@ -9,9 +10,33 @@ from PyQt6.QtWidgets import (
     QFormLayout, QLineEdit, QSpinBox, QCheckBox, QComboBox, QTableWidget,
     QTableWidgetItem, QHeaderView
 )
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 # Global queue receiving actions recorded by external modules
 recorded_actions_q: "queue.Queue[dict]" = queue.Queue()
+
+
+class FlowChangeHandler(FileSystemEventHandler, QObject):
+    """Bridge watchdog events to Qt signals."""
+
+    file_changed = pyqtSignal(str)
+
+    def __init__(self) -> None:
+        FileSystemEventHandler.__init__(self)
+        QObject.__init__(self)
+
+    def _handle(self, path: str) -> None:
+        if path.endswith(".json") or path.endswith(".py"):
+            self.file_changed.emit(path)
+
+    def on_modified(self, event):
+        if not event.is_directory:
+            self._handle(event.src_path)
+
+    def on_created(self, event):
+        if not event.is_directory:
+            self._handle(event.src_path)
 
 # ---------- 中央キャンバス（ドット背景＋カード） ----------
 class DottedCanvas(QWidget):
@@ -240,9 +265,13 @@ class MainWindow(QMainWindow):
 
         root_v.addWidget(vsplit)
 
-        # Hot-reload support: watch the sample flow for changes and log updates
-        self._watcher = QFileSystemWatcher(["sample_flow.json"])
-        self._watcher.fileChanged.connect(self.on_flow_updated)
+        # Hot-reload support: watch flow files and action definitions for changes
+        self._flow_handler = FlowChangeHandler()
+        self._flow_handler.file_changed.connect(self.on_flow_updated)
+        self._observer = Observer()
+        self._observer.schedule(self._flow_handler, ".", recursive=False)
+        self._observer.schedule(self._flow_handler, "workflow", recursive=True)
+        self._observer.start()
 
         # expose the global queue for convenience
         self.recorded_actions_q = recorded_actions_q
@@ -305,6 +334,12 @@ class MainWindow(QMainWindow):
         self.log_panel.add_row(
             datetime.now().strftime("%H:%M:%S"), "Watcher", f"{path} changed", True
         )
+
+    def closeEvent(self, event):  # type: ignore[override]
+        if hasattr(self, "_observer"):
+            self._observer.stop()
+            self._observer.join()
+        super().closeEvent(event)
 
 def main():
     app = QApplication(sys.argv)
