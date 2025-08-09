@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import time
+import fcntl
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, IO, List, Optional, Set
 
 from .flow import Flow, Step
 from .safe_eval import safe_eval
@@ -151,10 +152,29 @@ class Runner:
         self.stopped = False
         self.run_id = run_id or str(int(time.time() * 1000))
         self.base_dir = Path(base_dir)
+        self.lock_path = self.base_dir / "runner.lock"
+        self._lock_file: Optional[IO[str]] = None
         self.run_dir = self.base_dir / self.run_id
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.artifacts_dir = self.run_dir / "artifacts"
         self.artifacts_dir.mkdir(exist_ok=True)
+
+    def _acquire_lock(self) -> None:
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock_file = open(self.lock_path, "w")
+        fcntl.flock(self._lock_file, fcntl.LOCK_EX)
+
+    def _release_lock(self) -> None:
+        if self._lock_file:
+            try:
+                fcntl.flock(self._lock_file, fcntl.LOCK_UN)
+            finally:
+                self._lock_file.close()
+                self._lock_file = None
+                try:
+                    self.lock_path.unlink()
+                except OSError:
+                    pass
 
     # ----- registration -----
     def register_action(self, name: str, func: ActionFunc) -> None:
@@ -167,9 +187,13 @@ class Runner:
         return self.run_flow(flow, inputs or {})
 
     def run_flow(self, flow: Flow, inputs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        ctx = ExecutionContext(flow, inputs or {})
-        self._run_steps(flow.steps, ctx)
-        return ctx.flow_vars
+        self._acquire_lock()
+        try:
+            ctx = ExecutionContext(flow, inputs or {})
+            self._run_steps(flow.steps, ctx)
+            return ctx.flow_vars
+        finally:
+            self._release_lock()
 
     def resume_flow(self, flow: Flow, start_step_id: str, checkpoint_path: Path | str) -> Dict[str, Any]:
         state = json.loads(Path(checkpoint_path).read_text())
@@ -425,6 +449,7 @@ class Runner:
 
     def stop(self) -> None:
         self.stopped = True
+        self._release_lock()
 
     # ----- error helpers -----
     def _take_screenshot(self, step: Step, ctx: ExecutionContext, exc: Exception) -> None:
