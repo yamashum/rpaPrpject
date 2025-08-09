@@ -458,13 +458,16 @@ class Runner:
 
             selectors = [original_selector]
             if isinstance(original_selector, dict):
-                ordered = [s for s in profile.selectors if s in original_selector]
+                order = step.selectorOrder or profile.selectors
+                ordered = [s for s in order if s in original_selector]
                 if ordered:
                     selectors = [{name: original_selector[name]} for name in ordered]
 
+            selector_retry = step.selectorRetry if step.selectorRetry is not None else retry
+
             for sel in selectors:
                 step.selector = sel
-                for attempt in range(retry + 1):
+                for attempt in range(selector_retry + 1):
                     start = time.time()
                     ctx.globals["profile"] = pname
                     try:
@@ -552,7 +555,7 @@ class Runner:
                             ctx.pop_local()
                             step.selector = original_selector
                             return
-                        if attempt == retry:
+                        if attempt == selector_retry:
                             break
                         time.sleep(0.1 * (2 ** attempt))
             step.selector = original_selector

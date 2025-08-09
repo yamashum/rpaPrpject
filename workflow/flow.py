@@ -79,6 +79,8 @@ class Step:
     id: str
     action: Optional[str] = None
     selector: Optional[Dict[str, Any]] = None
+    selectorOrder: List[str] = field(default_factory=list)
+    selectorRetry: Optional[int] = None
     target: Optional[Dict[str, Any]] = None
     params: Dict[str, Any] = field(default_factory=dict)
     waitFor: Optional[str] = None
@@ -124,6 +126,8 @@ class Flow:
                 id=sd.get("id", ""),
                 action=sd.get("action"),
                 selector=sd.get("selector"),
+                selectorOrder=sd.get("selectorOrder", []),
+                selectorRetry=sd.get("selectorRetry"),
                 target=sd.get("target"),
                 params=sd.get("params", {}),
                 waitFor=sd.get("waitFor"),
