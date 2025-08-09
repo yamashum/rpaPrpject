@@ -11,6 +11,8 @@ from workflow.actions_web import (
     fill as web_fill,
     wait_for as web_wait_for,
     download as web_download,
+    evaluate as web_evaluate,
+    screenshot as web_screenshot,
 )
 
 
@@ -94,5 +96,57 @@ def test_download_verification(tmp_path):
         Step(id="dl2", action="download", params={"selector": "dl", "path": str(dest)}), ctx
     )
     assert dest.exists() and dest.read_text() == "hello"
+    ctx.globals["_browser"].close()
+    ctx.globals["_playwright"].stop()
+
+
+def test_evaluate_and_screenshot(tmp_path):
+    html = "<html><body><div id='v'>1</div></body></html>"
+    page_file = tmp_path / "index.html"
+    page_file.write_text(html)
+    ctx = build_ctx()
+    web_open(Step(id="open", action="open", params={"url": page_file.as_uri()}), ctx)
+    result = web_evaluate(
+        Step(
+            id="eval",
+            action="evaluate",
+            params={"script": "() => document.getElementById('v').textContent"},
+        ),
+        ctx,
+    )
+    assert result == "1"
+
+    shot = tmp_path / "shot.png"
+    web_screenshot(
+        Step(id="ss", action="screenshot", params={"path": str(shot)}), ctx
+    )
+    assert shot.exists()
+
+    ctx.globals["_browser"].close()
+    ctx.globals["_playwright"].stop()
+
+
+def test_wait_for_conditions(tmp_path):
+    html = (
+        "<html><head>"
+        "<script>setTimeout(()=>{document.body.dataset.ready='1';},100);</script>"
+        "</head><body></body></html>"
+    )
+    page_file = tmp_path / "index.html"
+    page_file.write_text(html)
+    ctx = build_ctx()
+    web_open(Step(id="open", action="open", params={"url": page_file.as_uri()}), ctx)
+    web_wait_for(Step(id="state", action="wait_for", params={"state": "load"}), ctx)
+    web_wait_for(
+        Step(id="url", action="wait_for", params={"url": page_file.as_uri()}), ctx
+    )
+    web_wait_for(
+        Step(
+            id="expr",
+            action="wait_for",
+            params={"expr": "() => document.body.dataset.ready === '1'"},
+        ),
+        ctx,
+    )
     ctx.globals["_browser"].close()
     ctx.globals["_playwright"].stop()
