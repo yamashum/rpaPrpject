@@ -19,6 +19,7 @@ except Exception:  # pragma: no cover - optional dependency
 from .flow import Step
 from .runner import ExecutionContext
 from .selector import normalize_selector
+from .hooks import apply_screenshot_mask
 
 _PW_KEY = "_playwright"
 _BROWSER_KEY = "_browser"
@@ -375,11 +376,14 @@ def screenshot(step: Step, ctx: ExecutionContext) -> Any:
                 break
         else:
             target = page.locator(selector)
-        img = target.screenshot(path=path)
+        img = target.screenshot()
     else:
-        img = page.screenshot(path=path, full_page=full_page)
+        img = page.screenshot(full_page=full_page)
+
+    img = apply_screenshot_mask(img)
 
     if path:
+        Path(path).write_bytes(img)
         return path
     # When no path is provided return the size of the screenshot in bytes to
     # avoid sending large binary data through the workflow output.

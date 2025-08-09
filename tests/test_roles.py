@@ -14,5 +14,5 @@ def test_runner_requires_role(monkeypatch):
     monkeypatch.setattr(builtins, "input", lambda prompt="": "y")
     with pytest.raises(PermissionError):
         runner.run_flow(flow, {})
-    result = runner.run_flow(flow, {"roles": ["user"]})
+    result = runner.run_flow(flow, {"roles": ["user"], "approval_level": 1})
     assert result["ans"] == "y"
