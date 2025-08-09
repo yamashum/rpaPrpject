@@ -23,6 +23,30 @@ SENSITIVE_ACTION_ROLES: Dict[str, Set[str]] = {
     "prompt.select": {"user"},
 }
 
+# Mapping of action names to required permissions
+ACTION_PERMISSIONS: Dict[str, str] = {
+    # Desktop/UI automation actions
+    "launch": "desktop.uia",
+    "attach": "desktop.uia",
+    "activate": "desktop.uia",
+    "click": "desktop.uia",
+    "double_click": "desktop.uia",
+    "type_text": "desktop.uia",
+    "set_value": "desktop.uia",
+    "select": "desktop.uia",
+    "check": "desktop.uia",
+    "uncheck": "desktop.uia",
+    "find_image": "desktop.uia",
+    "ocr_read": "desktop.uia",
+    "click_xy": "desktop.uia",
+    "table.find_row": "desktop.uia",
+    "row.select": "desktop.uia",
+    "row.double_click": "desktop.uia",
+    "ime.on": "desktop.uia",
+    "ime.off": "desktop.uia",
+    "layout.switch": "desktop.uia",
+}
+
 
 class BreakFlow(Exception):
     pass
@@ -49,6 +73,7 @@ class ExecutionContext:
         self.permissions: Dict[str, Set[str]] = {
             k: set(v) for k, v in self.flow.permissions.items()
         }
+        self.allowed_permissions: Set[str] = set(self.flow.meta.permissions)
         self.locals_stack: List[Dict[str, Any]] = []
         roles_input = self.inputs.get("roles")
         if isinstance(roles_input, (list, set, tuple)):
@@ -203,11 +228,6 @@ class Runner:
         self._acquire_lock()
         try:
             ctx = ExecutionContext(flow, inputs or {})
-            required = set(flow.meta.permissions)
-            if required and not required.issubset(ctx.roles):
-                raise PermissionError(
-                    f"Flow requires roles {sorted(required)}"
-                )
             self._run_steps(flow.steps, ctx)
             return ctx.flow_vars
         finally:
@@ -216,11 +236,6 @@ class Runner:
     def resume_flow(self, flow: Flow, start_step_id: str, checkpoint_path: Path | str) -> Dict[str, Any]:
         state = json.loads(Path(checkpoint_path).read_text())
         ctx = ExecutionContext(flow, {})
-        required = set(flow.meta.permissions)
-        if required and not required.issubset(ctx.roles):
-            raise PermissionError(
-                f"Flow requires roles {sorted(required)}"
-            )
         ctx.flow_vars.update(state.get("flow_vars", {}))
         ctx.globals.update(state.get("globals", {}))
         index = next((i for i, s in enumerate(flow.steps) if s.id == start_step_id), None)
@@ -400,6 +415,11 @@ class Runner:
         if required and not required.issubset(ctx.roles):
             raise PermissionError(
                 f"Action '{step.action}' requires roles {sorted(required)}"
+            )
+        required_perm = ACTION_PERMISSIONS.get(step.action)
+        if required_perm and required_perm not in ctx.allowed_permissions:
+            raise PermissionError(
+                f"Action '{step.action}' requires permission '{required_perm}'"
             )
         func = self.actions.get(step.action)
         if not func:
