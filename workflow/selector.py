@@ -55,6 +55,28 @@ _HIT_STATS: Dict[str, Dict[str, int]] = {
 }
 _STATS_PATH: Path | None = None
 
+# accepted scope keys for narrowing search
+_SCOPE_KEYS = {"process", "name", "class", "activeWindow"}
+
+
+def _filter_scope(scope: Any) -> Dict[str, Any]:
+    """Return a scope dictionary limited to known keys."""
+
+    if not isinstance(scope, dict):
+        return {}
+    return {k: v for k, v in scope.items() if k in _SCOPE_KEYS}
+
+
+def _merge_scope(data: Dict[str, Any] | None, scope: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge ``scope`` into ``data`` without mutating either."""
+
+    if not scope:
+        return data or {}
+    merged: Dict[str, Any] = dict(scope)
+    if data:
+        merged.update(data)
+    return merged
+
 
 def _load_stats(path: Path) -> None:
     """Load selector statistics from ``path`` if it exists."""
@@ -90,7 +112,10 @@ def resolve(selector: Dict[str, Any], run_dir: Path | str | None = None) -> Dict
     ----------
     selector:
         Mapping containing zero or more strategy entries such as ``"uia"`` or
-        ``"image"``. Strategies are attempted based on historical success rate.
+        ``"image"``.  A ``"scope"`` mapping may be supplied to narrow the
+        search using ``process``, ``name``, ``class`` or ``activeWindow``.  A
+        selector may also contain an ``"anyOf"`` list of alternative selectors
+        which are tried sequentially until one succeeds.
     run_dir:
         Directory where hit statistics should be saved. When ``None`` the
         environment variables ``RUN_DIR`` or ``RPA_RUN_DIR`` are used if
@@ -114,6 +139,28 @@ def resolve(selector: Dict[str, Any], run_dir: Path | str | None = None) -> Dict
             _HIT_STATS = {name: {"attempts": 0, "success": 0} for name in _STRATEGIES}
             _load_stats(path)
 
+    scope = _filter_scope(selector.get("scope"))
+
+    # ``anyOf``: try candidate selectors sequentially
+    any_of = selector.get("anyOf")
+    if isinstance(any_of, list):
+        last_exc: SelectionError | None = None
+        for cand in any_of:
+            if not isinstance(cand, dict):
+                continue
+            cand = dict(cand)
+            cand_scope = _filter_scope(cand.get("scope"))
+            merged_scope = {**scope, **cand_scope}
+            if merged_scope:
+                cand["scope"] = merged_scope
+            try:
+                return resolve(cand, run_dir=run_dir)
+            except SelectionError as exc:
+                last_exc = exc
+        if last_exc:
+            raise last_exc
+        raise SelectionError("No selector strategy could resolve the element")
+
     strategies = [name for name in selector if name in _STRATEGIES]
     base_order = ["uia", "win32", "anchor", "image", "coordinate"]
     if os.getenv("RPA_VDI") or os.getenv("VDI") or os.getenv("VDI_MODE"):
@@ -131,6 +178,7 @@ def resolve(selector: Dict[str, Any], run_dir: Path | str | None = None) -> Dict
         data = selector.get(name)
         if not data:
             continue
+        data = _merge_scope(data, scope)
         _HIT_STATS.setdefault(name, {"attempts": 0, "success": 0})
         _HIT_STATS[name]["attempts"] += 1
         resolver = _STRATEGIES[name]
