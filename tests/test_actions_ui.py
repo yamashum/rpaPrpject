@@ -127,6 +127,50 @@ def test_find_table_row(monkeypatch):
     assert row["name"] == "Bob"
 
 
+def test_row_actions_scroll(monkeypatch):
+    class Table:
+        def __init__(self):
+            self.scroll_calls = 0
+
+        def scroll_to_row(self, row):
+            self.scroll_calls += 1
+            row.visible = True
+
+    class Row:
+        def __init__(self, table):
+            self.table = table
+            self.visible = False
+            self.selected = False
+            self.double_clicked = False
+
+        def is_visible(self):
+            return self.visible
+
+        def is_enabled(self):
+            return True
+
+        def select(self):
+            self.selected = True
+
+        def double_click(self):
+            self.double_clicked = True
+
+    table = Table()
+    row = Row(table)
+    monkeypatch.setattr(actions, "resolve_selector", lambda s: {"strategy": "mock", "target": row})
+    monkeypatch.setattr(actions.time, "sleep", lambda x: None)
+    ctx = build_ctx()
+
+    actions.select_row(Step(id="s", action="row.select", selector={"mock": {}}), ctx)
+    assert row.selected
+    assert table.scroll_calls == 1
+
+    row.visible = False
+    actions.double_click_row(Step(id="d", action="row.double_click", selector={"mock": {}}), ctx)
+    assert row.double_clicked
+    assert table.scroll_calls == 2
+
+
 def test_find_image_ocr(monkeypatch):
     calls = []
 
