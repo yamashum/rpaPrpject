@@ -7,6 +7,11 @@ import time
 import getpass
 from typing import Any, Callable, Dict
 
+try:
+    import psutil
+except Exception:  # pragma: no cover - psutil may be missing in minimal envs
+    psutil = None
+
 from .flow import Step
 from .runner import ExecutionContext
 from .safe_eval import safe_eval
@@ -195,6 +200,49 @@ def _resolve_with_wait(selector: Dict[str, Any], timeout_ms: int) -> Dict[str, A
     raise TimeoutError("element not found")
 
 
+def _wait_for_idle(
+    cpu_threshold: float = 10.0,
+    disk_threshold: float = 1024 * 1024,
+    timeout_ms: int = 3000,
+) -> bool:
+    """Wait until system CPU and disk usage fall below thresholds."""
+
+    if psutil is None:
+        raise RuntimeError("psutil is required for idle waiting")
+
+    end = time.time() + timeout_ms / 1000.0
+    prev = psutil.disk_io_counters()
+    prev_time = time.time()
+    while time.time() < end:
+        cpu = psutil.cpu_percent(interval=0.1)
+        now = time.time()
+        io = psutil.disk_io_counters()
+        elapsed = now - prev_time
+        delta = (io.read_bytes + io.write_bytes) - (
+            prev.read_bytes + prev.write_bytes
+        )
+        rate = delta / elapsed if elapsed else float("inf")
+        if cpu < cpu_threshold and rate < disk_threshold:
+            return True
+        prev, prev_time = io, now
+    raise TimeoutError("system busy")
+
+
+def _wait_splash_gone(selector: Dict[str, Any], timeout_ms: int) -> bool:
+    """Wait until ``selector`` cannot be resolved anymore."""
+
+    def _gone() -> bool:
+        try:
+            resolve_selector(selector)
+            return False
+        except Exception:
+            return True
+
+    if not _wait_until(_gone, timeout_ms):
+        raise TimeoutError("splash still visible")
+    return True
+
+
 def launch(step: Step, ctx: ExecutionContext) -> Any:
     """Launch an application specified by ``path`` and optional ``args``."""
 
@@ -205,6 +253,19 @@ def launch(step: Step, ctx: ExecutionContext) -> Any:
     if isinstance(args, str):
         args = [args]
     proc = subprocess.Popen([path, *args])
+    selector = (
+        step.params.get("window") or step.selector or step.params.get("selector")
+    )
+    if selector:
+        wait_params: Dict[str, Any] = {
+            "selector": selector,
+            "timeout": step.params.get("timeout", 3000),
+        }
+        for key in ("splash", "cpu_threshold", "disk_threshold", "idle_timeout"):
+            if key in step.params:
+                wait_params[key] = step.params[key]
+        wait_step = Step(id="wait.open", params=wait_params)
+        wait_open(wait_step, ctx)
     return proc.pid
 
 
@@ -266,6 +327,19 @@ def wait_open(step: Step, ctx: ExecutionContext) -> Any:
     resolved = _resolve_with_wait(selector, timeout)
     strategies = ctx.globals.setdefault("learned_selectors", [])
     strategies.append(resolved["strategy"])
+    splash = step.params.get("splash") or step.params.get("spinner")
+    if splash:
+        _wait_splash_gone(splash, timeout)
+
+    cpu_th = step.params.get("cpu_threshold")
+    disk_th = step.params.get("disk_threshold")
+    idle_timeout = step.params.get("idle_timeout", timeout)
+    if cpu_th is not None or disk_th is not None:
+        _wait_for_idle(
+            cpu_th if cpu_th is not None else 10.0,
+            disk_th if disk_th is not None else 1024 * 1024,
+            idle_timeout,
+        )
     return resolved
 
 
