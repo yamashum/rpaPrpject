@@ -119,6 +119,18 @@ class Runner:
         funcs = {"range": range}
         return safe_eval(expr, env, funcs)
 
+    def _wait_for_condition(self, expr: str, ctx: ExecutionContext, timeout_ms: int) -> None:
+        """Wait until the given expression evaluates to True or timeout."""
+        end_time = time.time() + timeout_ms / 1000.0
+        while time.time() < end_time:
+            try:
+                if self._eval_expr(expr, ctx):
+                    return
+            except Exception:
+                pass
+            time.sleep(0.1)
+        raise TimeoutError(f"waitFor condition not met: {expr}")
+
     def _run_step(self, step: Step, ctx: ExecutionContext) -> None:
         if step.break_flag:
             raise BreakFlow()
@@ -205,6 +217,8 @@ class Runner:
         for attempt in range(retry + 1):
             start = time.time()
             try:
+                if step.waitFor:
+                    self._wait_for_condition(step.waitFor, ctx, timeout_ms)
                 result = func(step, ctx)
                 duration = (time.time() - start) * 1000.0
                 if duration > timeout_ms:
