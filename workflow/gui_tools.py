@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple
+from queue import Queue
+from typing import Any, Callable, Dict, List, Tuple
 
 from .selector import analyze_selectors, normalize_selector
 
@@ -204,7 +205,12 @@ def capture_coordinates(
 
 
 def record_web(
-    actions: List[Dict[str, Any]], flow: Dict[str, Any] | None = None
+    actions: List[Dict[str, Any]],
+    flow: Dict[str, Any] | None = None,
+    *,
+    insert: bool = False,
+    callback: Callable[[Dict[str, Any]], None] | None = None,
+    queue: "Queue[Dict[str, Any]]" | None = None,
 ) -> List[Dict[str, Any]]:
     """Record a sequence of web actions.
 
@@ -212,6 +218,27 @@ def record_web(
     :func:`selector.analyze_selectors`.  When ``flow`` is provided any action
     containing an ``"id"`` field is inserted into the flow using
     :func:`wire_to_flow`.
+
+    Parameters
+    ----------
+    actions:
+        List of action dictionaries recorded from the browser.
+    flow:
+        Optional flow definition to update in-place.
+    insert:
+        When ``True`` each processed action is also emitted to ``callback`` or
+        ``queue`` allowing other components (such as a GUI) to receive
+        incremental updates.
+    callback:
+        Function invoked with each processed action when ``insert`` is
+        ``True``.
+    queue:
+        Queue receiving each processed action when ``insert`` is ``True``.
+
+    Returns
+    -------
+    List[Dict[str, Any]]
+        The processed actions with normalised selectors.
     """
 
     analyze_selectors(actions)
@@ -224,6 +251,11 @@ def record_web(
         if flow is not None and action.get("id"):
             params = {k: v for k, v in action.items() if k != "id"}
             wire_to_flow(flow, action["id"], params)
+        if insert:
+            if callback is not None:
+                callback(action)
+            if queue is not None:
+                queue.put(action)
     return actions
 
 
