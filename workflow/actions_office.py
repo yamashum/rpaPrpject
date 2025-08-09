@@ -92,6 +92,28 @@ def excel_find_replace(step: Step, ctx: ExecutionContext) -> Any:
     return replace
 
 
+def excel_close(step: Step, ctx: ExecutionContext) -> Any:
+    """Close the active workbook and quit the Excel application."""
+    save = step.params.get("save", False)
+    wb = ctx.globals.pop(_EXCEL_BOOK, None)
+    if wb is not None:
+        wb.Close(SaveChanges=save)
+    app = ctx.globals.pop(_EXCEL_APP, None)
+    if app is not None:
+        app.Quit()
+    return True
+
+
+def excel_activate(step: Step, ctx: ExecutionContext) -> Any:
+    """Activate an open workbook by name."""
+    name = step.params["name"]
+    app = ctx.globals[_EXCEL_APP]
+    wb = app.Workbooks(name)
+    wb.Activate()
+    ctx.globals[_EXCEL_BOOK] = wb
+    return name
+
+
 OFFICE_ACTIONS = {
     "excel.open": excel_open,
     "excel.get": excel_get,
@@ -100,4 +122,6 @@ OFFICE_ACTIONS = {
     "excel.run_macro": excel_run_macro,
     "excel.export": excel_export,
     "excel.find_replace": excel_find_replace,
+    "excel.close": excel_close,
+    "excel.activate": excel_activate,
 }

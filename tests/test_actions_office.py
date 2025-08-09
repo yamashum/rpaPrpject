@@ -53,3 +53,20 @@ def test_excel_actions(monkeypatch):
         ctx,
     )
     cells.Replace.assert_called_once_with("old", "new")
+
+    wb2 = MagicMock()
+    app.Workbooks.return_value = wb2
+    office.excel_activate(
+        Step(id="act", action="excel.activate", params={"name": "Book2"}), ctx
+    )
+    app.Workbooks.assert_called_once_with("Book2")
+    wb2.Activate.assert_called_once()
+    assert ctx.globals["_excel_book"] is wb2
+
+    office.excel_close(
+        Step(id="close", action="excel.close", params={"save": False}), ctx
+    )
+    wb2.Close.assert_called_once_with(SaveChanges=False)
+    app.Quit.assert_called_once()
+    assert "_excel_book" not in ctx.globals
+    assert "_excel_app" not in ctx.globals

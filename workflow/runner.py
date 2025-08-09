@@ -82,6 +82,8 @@ ACTION_PERMISSIONS: Dict[str, str] = {
     "excel.run_macro": "office",
     "excel.export": "office",
     "excel.find_replace": "office",
+    "excel.close": "office",
+    "excel.activate": "office",
     "word.open": "office",
     "word.save": "office",
     "word.run_macro": "office",
