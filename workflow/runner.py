@@ -136,6 +136,22 @@ class Runner:
             print(json.dumps({"stepId": step.id, "action": "while", "result": "done"}))
             return
 
+        if step.action == "switch":
+            value = self._eval_expr(step.switch_expr or "None", ctx)
+            matched = False
+            for case in step.cases:
+                case_val = case.get("value")
+                if isinstance(case_val, str):
+                    case_val = self._eval_expr(case_val, ctx)
+                if value == case_val:
+                    self._run_steps(case.get("steps", []), ctx)
+                    matched = True
+                    break
+            if not matched:
+                self._run_steps(step.default_steps, ctx)
+            print(json.dumps({"stepId": step.id, "action": "switch", "result": value}))
+            return
+
         if step.action == "for_each":
             iterable = self._eval_expr(step.params.get("items", "[]"), ctx)
             var_name = step.for_each or "item"

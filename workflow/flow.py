@@ -47,10 +47,13 @@ class Step:
     while_condition: Optional[str] = None
     for_each: Optional[str] = None
     subflow: Optional[str] = None
+    switch_expr: Optional[str] = None
     steps: List["Step"] = field(default_factory=list)
     else_steps: List["Step"] = field(default_factory=list)
     catch_steps: List["Step"] = field(default_factory=list)
     finally_steps: List["Step"] = field(default_factory=list)
+    cases: List[Dict[str, Any]] = field(default_factory=list)
+    default_steps: List["Step"] = field(default_factory=list)
 
     break_flag: bool = False
     continue_flag: bool = False
@@ -86,6 +89,7 @@ class Flow:
                 while_condition=sd.get("while"),
                 for_each=sd.get("for_each"),
                 subflow=sd.get("subflow"),
+                switch_expr=sd.get("switch"),
                 break_flag=sd.get("break", False),
                 continue_flag=sd.get("continue", False),
             )
@@ -93,6 +97,11 @@ class Flow:
             step.else_steps = Flow._load_steps(sd.get("else", []))
             step.catch_steps = Flow._load_steps(sd.get("catch", []))
             step.finally_steps = Flow._load_steps(sd.get("finally", []))
+            step.cases = []
+            for cd in sd.get("cases", []):
+                case_steps = Flow._load_steps(cd.get("steps", []))
+                step.cases.append({"value": cd.get("value"), "steps": case_steps})
+            step.default_steps = Flow._load_steps(sd.get("default", []))
             steps.append(step)
         return steps
 
