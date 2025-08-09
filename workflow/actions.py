@@ -812,16 +812,111 @@ def type_text(step: Step, ctx: ExecutionContext) -> Any:
 
 
 def find_table_row(step: Step, ctx: ExecutionContext) -> Any:
-    """Return the first table row matching ``criteria``."""
+    """Return the first table row matching ``criteria``.
+
+    ``criteria`` may be either a mapping of column specifiers to condition or a
+    list of condition dictionaries.  A column can be referenced by header name
+    or zero-based index.  Each condition supports one of ``equals``,
+    ``contains`` or ``regex``.  A plain mapping ``{"Name": "Bob"}`` is treated
+    as ``{"column": "Name", "equals": "Bob"}``.
+
+    Examples
+    --------
+    >>> criteria = {"Name": {"equals": "Bob"}}
+    >>> criteria = [
+    ...     {"column": 0, "contains": "2023"},
+    ...     {"column": "Status", "regex": r"^ok$"},
+    ... ]
+    """
+
+    import re
+
+    def _normalize(criteria: Any) -> list[dict[str, Any]]:
+        if isinstance(criteria, dict):
+            result: list[dict[str, Any]] = []
+            for col, cond in criteria.items():
+                if isinstance(cond, dict):
+                    item = {"column": col}
+                    item.update(cond)
+                else:
+                    item = {"column": col, "equals": cond}
+                result.append(item)
+            return result
+        if isinstance(criteria, list):
+            result = []
+            for cond in criteria:
+                if not isinstance(cond, dict) or "column" not in cond:
+                    raise ValueError("criteria items must be dicts with 'column'")
+                result.append(cond)
+            return result
+        raise TypeError("criteria must be dict or list")
+
+    def _get_rows(tbl: Any) -> list[Any]:
+        rows = getattr(tbl, "rows", None)
+        if callable(rows):
+            rows = rows()
+        if rows is None:
+            raise AttributeError("table has no rows")
+        return list(rows)
+
+    def _get_headers(tbl: Any) -> list[str]:
+        headers = getattr(tbl, "headers", None)
+        if callable(headers):
+            headers = headers()
+        if headers is None:
+            headers = []
+        return list(headers)
+
+    def _cell_value(row: Any, column: Any, headers: list[str]) -> Any:
+        if isinstance(column, str) and column.isdigit():
+            column = int(column)
+        if isinstance(column, int):
+            if isinstance(row, (list, tuple)):
+                return row[column]
+            if isinstance(row, dict):
+                if headers and column < len(headers):
+                    return row.get(headers[column])
+                return list(row.values())[column]
+        else:  # column specified by header
+            if isinstance(row, dict):
+                if column in row:
+                    return row[column]
+            if isinstance(row, (list, tuple)) and column in headers:
+                idx = headers.index(column)
+                return row[idx]
+        raise KeyError(f"column {column} not found")
+
+    def _matches(value: Any, cond: dict[str, Any]) -> bool:
+        if "equals" in cond:
+            return str(value) == str(cond["equals"])
+        if "contains" in cond:
+            return str(cond["contains"]) in str(value)
+        if "regex" in cond:
+            return re.search(cond["regex"], str(value)) is not None
+        raise ValueError("unknown condition")
 
     selector = step.selector or step.params.get("selector") or {}
     criteria = step.params.get("criteria", {})
     timeout = step.params.get("timeout", 3000)
     resolved = _resolve_with_wait(selector, timeout)
     table = resolved["target"]
-    if not hasattr(table, "find_row"):
-        raise AttributeError("target has no find_row")
-    return table.find_row(criteria)
+
+    try:
+        rows = _get_rows(table)
+        headers = _get_headers(table)
+    except AttributeError:
+        if hasattr(table, "find_row"):
+            return table.find_row(criteria)
+        raise
+
+    normalized = _normalize(criteria)
+    for row in rows:
+        try:
+            if all(_matches(_cell_value(row, c["column"], headers), c) for c in normalized):
+                return row
+        except Exception:
+            continue
+    raise LookupError("row not found")
 
 
 def select_row(step: Step, ctx: ExecutionContext) -> Any:
