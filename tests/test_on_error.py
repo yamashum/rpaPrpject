@@ -62,3 +62,40 @@ def test_on_error_continue_skips_exception():
 
     assert ctx.get_var("y") == 5
 
+
+def test_on_error_uiatree_webtrace(monkeypatch):
+    step = Step(id="s", action="fail", onError={"uiatree": True, "webTrace": True})
+    ctx = make_ctx(step)
+    runner = build_runner()
+    called = {}
+
+    def fake_capture(step, exc, *, uiatree=False, web_trace=False):
+        called["uiatree"] = uiatree
+        called["web_trace"] = web_trace
+        return {}
+
+    monkeypatch.setattr(runner, "_capture_artifacts", fake_capture)
+
+    with pytest.raises(ValueError):
+        runner._run_steps([step], ctx)
+
+    assert called.get("uiatree") is True
+    assert called.get("web_trace") is True
+
+
+def test_on_error_uiatree_webtrace_files(tmp_path):
+    step = Step(id="s", action="fail", onError={"uiatree": True, "webTrace": True})
+    ctx = make_ctx(step)
+    runner = Runner(base_dir=tmp_path)
+    for name, func in BUILTIN_ACTIONS.items():
+        runner.register_action(name, func)
+    runner.register_action("fail", failing_action)
+
+    with pytest.raises(ValueError):
+        runner._run_steps([step], ctx)
+
+    ui_files = list(runner.artifacts_dir.glob("*_ui.json"))
+    trace_files = list(runner.artifacts_dir.glob("*_trace.json"))
+    assert ui_files
+    assert trace_files
+
