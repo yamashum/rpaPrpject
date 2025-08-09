@@ -1,4 +1,22 @@
-"""Data models for workflow definition."""
+"""Data models for workflow definition.
+
+The classes in this module mirror the JSON structure used to describe a
+workflow.  Variables are declared with :class:`VarDef` which supports a
+small set of primitive types as well as a few convenience types.
+
+Example
+-------
+>>> from datetime import date
+>>> from pathlib import Path
+>>> flow = Flow(
+...     version="1",
+...     meta=Meta(name="demo"),
+...     variables={
+...         "today": VarDef(type="date", value=date.today()),
+...         "out": VarDef(type="path", value=Path("/tmp")),
+...     },
+... )
+"""
 
 from __future__ import annotations
 
@@ -31,7 +49,21 @@ class Defaults:
 
 @dataclass
 class VarDef:
-    """Definition of a flow variable including its type and default value."""
+    """Definition of a flow variable including its type and default value.
+
+    Parameters
+    ----------
+    type:
+        Name of the variable type. Supported values are ``int``, ``float``,
+        ``str``, ``bool``, ``date``, ``path``, ``secret``, ``array``, ``object``
+        and ``any``. ``date`` accepts :class:`datetime.date` or
+        :class:`datetime.datetime` objects; ``path`` accepts strings or
+        :class:`pathlib.Path`; ``array`` maps to :class:`list`; ``object`` maps
+        to :class:`dict`; ``secret`` behaves like ``str`` but marks the value as
+        sensitive.
+    value:
+        Default value for the variable.
+    """
 
     type: str = "any"
     value: Any = None

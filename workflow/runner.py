@@ -7,6 +7,7 @@ import time
 import os
 import fcntl
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, IO, List, Optional, Set
 
@@ -80,7 +81,17 @@ class ExecutionContext:
         self._check_write(name)
         expected = self.var_types.get(name)
         if expected and expected != "any":
-            type_map = {"int": int, "float": float, "str": str, "bool": bool}
+            type_map = {
+                "int": int,
+                "float": float,
+                "str": str,
+                "bool": bool,
+                "date": (datetime, date),
+                "path": (str, Path),
+                "secret": str,
+                "array": list,
+                "object": dict,
+            }
             py_type = type_map.get(expected)
             if py_type and not isinstance(value, py_type):
                 raise TypeError(f"Variable '{name}' expects {expected}")
