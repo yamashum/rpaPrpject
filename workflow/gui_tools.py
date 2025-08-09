@@ -30,17 +30,42 @@ def element_spy(selector: str, text: str | None = None) -> ElementInfo:
     return ElementInfo(selector=selector, text=text)
 
 
-def capture_coordinates() -> Tuple[int, int]:
-    """Return the current mouse coordinates.
+def capture_coordinates(
+    basis: str = "Screen",
+    origin: Tuple[int, int] | None = None,
+    preview: bool = False,
+) -> Dict[str, Any]:
+    """Return the current mouse coordinates with optional basis.
 
-    When the Qt GUI stack is not available (e.g. during headless test runs),
-    the origin ``(0, 0)`` is returned so that calling code can still operate.
+    Parameters
+    ----------
+    basis:
+        ``"Element"``, ``"Window"`` or ``"Screen"``. When ``Element`` or
+        ``Window`` the provided ``origin`` is subtracted from the cursor
+        position to yield relative coordinates.
+    origin:
+        Top-left coordinate of the reference element or window.
+    preview:
+        When ``True`` include a copy of the computed coordinates under the
+        ``"preview"`` key.  This is primarily useful for GUI tooling that wants
+        to display the result without performing an action.
     """
 
     if QCursor is None:  # pragma: no cover - exercised in headless tests
-        return 0, 0
-    pos = QCursor.pos()
-    return pos.x(), pos.y()
+        x, y = 0, 0
+    else:
+        pos = QCursor.pos()
+        x, y = pos.x(), pos.y()
+
+    if basis.lower() != "screen" and origin:
+        ox, oy = origin
+        x -= ox
+        y -= oy
+
+    result: Dict[str, Any] = {"x": x, "y": y, "basis": basis}
+    if preview:
+        result["preview"] = (x, y)
+    return result
 
 
 def record_web(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
