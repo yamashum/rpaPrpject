@@ -2,5 +2,6 @@
 
 from .flow import Flow, Step
 from .runner import Runner
+from .scheduler import CronScheduler, capture_crash
 
-__all__ = ["Flow", "Step", "Runner"]
+__all__ = ["Flow", "Step", "Runner", "CronScheduler", "capture_crash"]
