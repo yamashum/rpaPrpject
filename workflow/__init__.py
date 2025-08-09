@@ -7,6 +7,7 @@ from .overlay import ControlOverlay
 from .actions_access import ACCESS_ACTIONS
 from .actions_http import HTTP_ACTIONS
 from .actions_files import FILES_ACTIONS
+from .actions import find_image, wait_image_disappear
 
 __all__ = [
     "Flow",
@@ -18,4 +19,6 @@ __all__ = [
     "ACCESS_ACTIONS",
     "HTTP_ACTIONS",
     "FILES_ACTIONS",
+    "find_image",
+    "wait_image_disappear",
 ]

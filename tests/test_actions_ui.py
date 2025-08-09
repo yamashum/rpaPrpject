@@ -325,6 +325,31 @@ def test_find_image_ocr(monkeypatch):
     assert text == "text"
 
 
+def test_wait_image_disappear(monkeypatch):
+    calls = []
+
+    def locate(path, region=None, scale=None, tolerance=None, dpi=None):
+        calls.append(1)
+        if len(calls) < 3:
+            return (1, 2, 3, 4)
+        return None
+
+    pa = types.SimpleNamespace(locateOnScreen=locate)
+    sys.modules["pyautogui"] = pa
+    monkeypatch.setattr(actions.time, "sleep", lambda x: None)
+    ctx = build_ctx()
+    result = actions.wait_image_disappear(
+        Step(
+            id="w",
+            action="wait_image_disappear",
+            params={"path": "img.png", "timeout": 100},
+        ),
+        ctx,
+    )
+    assert result is True
+    assert len(calls) == 3
+
+
 def test_attach_double_click_select(monkeypatch):
     class Elem:
         def __init__(self):
