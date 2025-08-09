@@ -15,14 +15,66 @@ def build_runner(tmp_path: Path) -> Runner:
 
 
 def test_requires_permission(tmp_path):
-    step = Step(id="s", action="click")
+    step = Step(id="s", action="launch")
     flow = Flow(version="1", meta=Meta(name="t"), steps=[step])
     runner = build_runner(tmp_path)
 
     with pytest.raises(PermissionError):
         runner.run_flow(flow, {})
 
-    runner.register_action("click", lambda step, ctx: True)
+    runner.register_action("launch", lambda step, ctx: True)
     flow_ok = Flow(version="1", meta=Meta(name="t", permissions=["desktop.uia"]), steps=[step])
+    assert runner.run_flow(flow_ok, {}) == {}
+
+
+def test_web_permission(tmp_path):
+    step = Step(id="s", action="open", params={"url": "http://example.com"})
+    flow = Flow(version="1", meta=Meta(name="t"), steps=[step])
+    runner = build_runner(tmp_path)
+
+    with pytest.raises(PermissionError):
+        runner.run_flow(flow, {})
+
+    runner.register_action("open", lambda step, ctx: True)
+    flow_ok = Flow(version="1", meta=Meta(name="t", permissions=["web"]), steps=[step])
+    assert runner.run_flow(flow_ok, {}) == {}
+
+
+def test_office_permission(tmp_path):
+    step = Step(id="s", action="excel.open", params={"path": "file.xlsx"})
+    flow = Flow(version="1", meta=Meta(name="t"), steps=[step])
+    runner = build_runner(tmp_path)
+
+    with pytest.raises(PermissionError):
+        runner.run_flow(flow, {})
+
+    runner.register_action("excel.open", lambda step, ctx: True)
+    flow_ok = Flow(version="1", meta=Meta(name="t", permissions=["office"]), steps=[step])
+    assert runner.run_flow(flow_ok, {}) == {}
+
+
+def test_http_permission(tmp_path):
+    step = Step(id="s", action="http.get", params={"url": "http://example.com"})
+    flow = Flow(version="1", meta=Meta(name="t"), steps=[step])
+    runner = build_runner(tmp_path)
+
+    with pytest.raises(PermissionError):
+        runner.run_flow(flow, {})
+
+    runner.register_action("http.get", lambda step, ctx: True)
+    flow_ok = Flow(version="1", meta=Meta(name="t", permissions=["http"]), steps=[step])
+    assert runner.run_flow(flow_ok, {}) == {}
+
+
+def test_file_permission(tmp_path):
+    step = Step(id="s", action="file.read", params={"path": "file.txt"})
+    flow = Flow(version="1", meta=Meta(name="t"), steps=[step])
+    runner = build_runner(tmp_path)
+
+    with pytest.raises(PermissionError):
+        runner.run_flow(flow, {})
+
+    runner.register_action("file.read", lambda step, ctx: True)
+    flow_ok = Flow(version="1", meta=Meta(name="t", permissions=["file"]), steps=[step])
     assert runner.run_flow(flow_ok, {}) == {}
 
