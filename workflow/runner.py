@@ -13,7 +13,7 @@ from typing import Any, Callable, Dict, IO, List, Optional, Set
 from .flow import Flow, Step
 from .safe_eval import safe_eval
 from .logging import log_step
-from .config import PROFILES, get_profile_chain
+from .config import PROFILES, WAIT_PRESETS, get_profile_chain
 
 # Mapping of action names to required roles
 SENSITIVE_ACTION_ROLES: Dict[str, Set[str]] = {
@@ -255,6 +255,25 @@ class Runner:
             time.sleep(0.1)
         raise TimeoutError(f"waitFor condition not met: {expr}")
 
+    def _wait_for_preset(
+        self,
+        func: Callable[[Step, ExecutionContext], bool],
+        step: Step,
+        ctx: ExecutionContext,
+        timeout_ms: int,
+    ) -> None:
+        """Repeatedly call ``func`` until it returns True or timeout."""
+
+        end_time = time.time() + timeout_ms / 1000.0
+        while time.time() < end_time:
+            try:
+                if func(step, ctx):
+                    return
+            except Exception:
+                pass
+            time.sleep(0.1)
+        raise TimeoutError("waitFor condition not met")
+
     def _focus_target(self, step: Step, ctx: ExecutionContext) -> None:
         """Placeholder to focus the UI element/window specified in ``step.target``.
 
@@ -359,6 +378,7 @@ class Runner:
             log_step(self.run_id, self.run_dir, step.id, step.action, 0.0, "unknown")
             return
         ctx.push_local()
+        original_selector = step.selector
         last_exc: Optional[Exception] = None
         profiles = get_profile_chain(ctx.flow.defaults.envProfile)
         for pname in profiles:
@@ -383,78 +403,95 @@ class Runner:
                     else profile.timeoutMs
                 )
             )
-            for attempt in range(retry + 1):
-                start = time.time()
-                ctx.globals["profile"] = pname
-                try:
-                    if step.target:
-                        self._focus_target(step, ctx)
-                    if step.waitFor:
-                        self._wait_for_condition(step.waitFor, ctx, timeout_ms)
-                    result = func(step, ctx)
-                    duration = (time.time() - start) * 1000.0
-                    if duration > timeout_ms:
-                        raise TimeoutError(
-                            f"Step '{step.id}' exceeded {timeout_ms}ms"
+
+            selectors = [original_selector]
+            if isinstance(original_selector, dict):
+                ordered = [s for s in profile.selectors if s in original_selector]
+                if ordered:
+                    selectors = [{name: original_selector[name]} for name in ordered]
+
+            for sel in selectors:
+                step.selector = sel
+                for attempt in range(retry + 1):
+                    start = time.time()
+                    ctx.globals["profile"] = pname
+                    try:
+                        if step.target:
+                            self._focus_target(step, ctx)
+                        if step.waitFor:
+                            preset = WAIT_PRESETS.get(step.waitFor)
+                            if preset is not None:
+                                self._wait_for_preset(preset, step, ctx, timeout_ms)
+                            else:
+                                self._wait_for_condition(step.waitFor, ctx, timeout_ms)
+                        result = func(step, ctx)
+                        duration = (time.time() - start) * 1000.0
+                        if duration > timeout_ms:
+                            raise TimeoutError(
+                                f"Step '{step.id}' exceeded {timeout_ms}ms"
+                            )
+                        if step.out:
+                            ctx.set_var(step.out, result, scope="flow")
+                        log_step(
+                            self.run_id,
+                            self.run_dir,
+                            step.id,
+                            step.action,
+                            duration,
+                            "ok",
+                            output=result,
                         )
-                    if step.out:
-                        ctx.set_var(step.out, result, scope="flow")
-                    log_step(
-                        self.run_id,
-                        self.run_dir,
-                        step.id,
-                        step.action,
-                        duration,
-                        "ok",
-                        output=result,
-                    )
-                    print(
-                        json.dumps(
-                            {
-                                "stepId": step.id,
-                                "action": step.action,
-                                "result": "ok",
-                                "output": result,
-                            }
+                        print(
+                            json.dumps(
+                                {
+                                    "stepId": step.id,
+                                    "action": step.action,
+                                    "result": "ok",
+                                    "output": result,
+                                }
+                            )
                         )
-                    )
-                    ctx.pop_local()
-                    return
-                except Exception as exc:
-                    last_exc = exc
-                    duration = (time.time() - start) * 1000.0
-                    artifacts = self._capture_artifacts(step, exc)
-                    log_step(
-                        self.run_id,
-                        self.run_dir,
-                        step.id,
-                        step.action,
-                        duration,
-                        "error",
-                        error=str(exc),
-                        **artifacts,
-                    )
-                    print(
-                        json.dumps(
-                            {
-                                "stepId": step.id,
-                                "action": step.action,
-                                "result": "error",
-                                "error": str(exc),
-                            }
-                        )
-                    )
-                    # ----- onError handling -----
-                    oe = step.onError or {}
-                    if oe.get("screenshot"):
-                        self._take_screenshot(step, ctx, exc)
-                    if oe.get("recover"):
-                        self._recover(oe["recover"], ctx)
-                    if oe.get("continue"):
                         ctx.pop_local()
+                        step.selector = original_selector
                         return
-                    if attempt == retry:
-                        break
+                    except Exception as exc:
+                        last_exc = exc
+                        duration = (time.time() - start) * 1000.0
+                        artifacts = self._capture_artifacts(step, exc)
+                        log_step(
+                            self.run_id,
+                            self.run_dir,
+                            step.id,
+                            step.action,
+                            duration,
+                            "error",
+                            error=str(exc),
+                            **artifacts,
+                        )
+                        print(
+                            json.dumps(
+                                {
+                                    "stepId": step.id,
+                                    "action": step.action,
+                                    "result": "error",
+                                    "error": str(exc),
+                                }
+                            )
+                        )
+                        # ----- onError handling -----
+                        oe = step.onError or {}
+                        if oe.get("screenshot"):
+                            self._take_screenshot(step, ctx, exc)
+                        if oe.get("recover"):
+                            self._recover(oe["recover"], ctx)
+                        if oe.get("continue"):
+                            ctx.pop_local()
+                            step.selector = original_selector
+                            return
+                        if attempt == retry:
+                            break
+                        time.sleep(0.1 * (2 ** attempt))
+            step.selector = original_selector
         ctx.pop_local()
         if last_exc is not None:
             raise last_exc
