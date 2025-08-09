@@ -1571,6 +1571,26 @@ def switch_layout(step: Step, ctx: ExecutionContext) -> Any:
     return layout
 
 
+def tab_switch(step: Step, ctx: ExecutionContext) -> Any:
+    """Switch to the next tab using the ``Ctrl+Tab`` hotkey."""
+
+    _send_hotkey("ctrl", "tab")
+    return True
+
+
+def alt_selector(step: Step, ctx: ExecutionContext) -> Any:
+    """Replace the selector of another step with an alternative."""
+
+    target_step = step.params.get("step")
+    new_selector = step.params.get("selector")
+    if not isinstance(target_step, Step):
+        raise ValueError("alt_selector requires 'step'")
+    if not isinstance(new_selector, dict):
+        raise ValueError("alt_selector requires 'selector'")
+    target_step.selector = new_selector
+    return new_selector
+
+
 def _stub_action(step: Step, ctx: ExecutionContext) -> Any:
     """Placeholder for unimplemented UI actions.
 
@@ -1688,5 +1708,7 @@ BUILTIN_ACTIONS.update(
         "ime.on": ime_on,
         "ime.off": ime_off,
         "layout.switch": switch_layout,
+        "tab_switch": tab_switch,
+        "alt_selector": alt_selector,
     }
 )
