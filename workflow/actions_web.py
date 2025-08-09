@@ -297,6 +297,7 @@ def wait_for(step: Step, ctx: ExecutionContext) -> Any:
 def download(step: Step, ctx: ExecutionContext) -> Any:
     selector = step.params["selector"]
     path = step.params.get("path")
+    pattern = step.params.get("pattern")
     frame = step.params.get("frame")
     timeout = step.params.get("timeout", 30000)
     stable = step.params.get("stable", 1000)
@@ -316,40 +317,78 @@ def download(step: Step, ctx: ExecutionContext) -> Any:
     with page.expect_download(timeout=timeout) as dl_info:
         chosen.click()
     download = dl_info.value
-    if path:
-        download.save_as(path)
-        saved = Path(path)
-    else:
-        saved = Path(download.path())
 
-    # Wait until file size stabilizes
-    deadline = time.time() + timeout / 1000
-    last_size = -1
-    stable_start: float | None = None
-    while True:
-        if not saved.exists():
+    if pattern:
+        dest_dir = Path(path) if path else Path.cwd()
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_file = dest_dir / download.suggested_filename
+        download.save_as(str(dest_file))
+        deadline = time.time() + timeout / 1000
+        last_size = -1
+        stable_start: float | None = None
+        saved: Path | None = None
+        while True:
+            matches = list(dest_dir.glob(pattern))
+            if not matches:
+                if time.time() > deadline:
+                    raise TimeoutError("Download timeout")
+                time.sleep(0.05)
+                continue
+            candidate = max(matches, key=lambda p: p.stat().st_mtime)
+            size = candidate.stat().st_size
+            if saved is None or candidate != saved:
+                saved = candidate
+                last_size = -1
+                stable_start = None
+            if size == last_size:
+                if stable_start is None:
+                    stable_start = time.time()
+                elif (time.time() - stable_start) * 1000 >= stable:
+                    break
+            else:
+                stable_start = None
+                last_size = size
             if time.time() > deadline:
                 raise TimeoutError("Download timeout")
-            time.sleep(0.05)
-            continue
-
-        size = saved.stat().st_size
-        if size == last_size:
-            if stable_start is None:
-                stable_start = time.time()
-            elif (time.time() - stable_start) * 1000 >= stable:
-                break
+            time.sleep(0.1)
+        if size == 0:
+            raise RuntimeError("Download failed")
+        return str(saved)
+    else:
+        if path:
+            download.save_as(path)
+            saved = Path(path)
         else:
-            stable_start = None
-            last_size = size
+            saved = Path(download.path())
 
-        if time.time() > deadline:
-            raise TimeoutError("Download timeout")
-        time.sleep(0.1)
+        # Wait until file size stabilizes
+        deadline = time.time() + timeout / 1000
+        last_size = -1
+        stable_start: float | None = None
+        while True:
+            if not saved.exists():
+                if time.time() > deadline:
+                    raise TimeoutError("Download timeout")
+                time.sleep(0.05)
+                continue
 
-    if size == 0:
-        raise RuntimeError("Download failed")
-    return str(saved)
+            size = saved.stat().st_size
+            if size == last_size:
+                if stable_start is None:
+                    stable_start = time.time()
+                elif (time.time() - stable_start) * 1000 >= stable:
+                    break
+            else:
+                stable_start = None
+                last_size = size
+
+            if time.time() > deadline:
+                raise TimeoutError("Download timeout")
+            time.sleep(0.1)
+
+        if size == 0:
+            raise RuntimeError("Download failed")
+        return str(saved)
 
 
 def evaluate(step: Step, ctx: ExecutionContext) -> Any:

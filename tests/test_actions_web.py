@@ -139,6 +139,20 @@ def test_download_verification(tmp_path):
         Step(id="dl2", action="download", params={"selector": "dl", "path": str(dest)}), ctx
     )
     assert dest.exists() and dest.read_text() == "hello"
+
+    # With directory and pattern
+    dest_dir = tmp_path / "dir"
+    dest_dir.mkdir()
+    found = web_download(
+        Step(
+            id="dl3",
+            action="download",
+            params={"selector": "dl", "path": str(dest_dir), "pattern": "*.txt"},
+        ),
+        ctx,
+    )
+    found_path = Path(found)
+    assert found_path.parent == dest_dir and found_path.read_text() == "hello"
     ctx.globals["_browser"].close()
     ctx.globals["_playwright"].stop()
 
