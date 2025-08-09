@@ -1,7 +1,7 @@
 # rpa_mock_ui_fixed.py
 import sys
 from datetime import datetime
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QFileSystemWatcher
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
@@ -237,6 +237,10 @@ class MainWindow(QMainWindow):
 
         root_v.addWidget(vsplit)
 
+        # Hot-reload support: watch the sample flow for changes and log updates
+        self._watcher = QFileSystemWatcher(["sample_flow.json"])
+        self._watcher.fileChanged.connect(self.on_flow_updated)
+
         # シグナル接続
         self.header.run_btn.clicked.connect(self.on_run)
         self.header.stop_btn.clicked.connect(self.on_stop)
@@ -269,6 +273,12 @@ class MainWindow(QMainWindow):
 
     def on_setting(self):
         self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Setting", "Opened", True)
+
+    def on_flow_updated(self, path: str):
+        """Refresh UI when the watched flow definition changes."""
+        self.log_panel.add_row(
+            datetime.now().strftime("%H:%M:%S"), "Watcher", f"{path} changed", True
+        )
 
 def main():
     app = QApplication(sys.argv)
