@@ -376,36 +376,16 @@ def modal_wait_open(step: Step, ctx: ExecutionContext) -> Any:
     return resolved
 
 
-def _ensure_ready(target: Any, timeout: int) -> None:
-    """Wait until the element is visible, enabled and unobstructed."""
+def _element_has_overlay(target: Any) -> bool:
+    """Return True if ``target`` appears to be covered by an overlay."""
 
-    if hasattr(target, "is_visible"):
-        if not _wait_until(lambda: target.is_visible(), timeout):
-            raise TimeoutError("element not visible")
-    if hasattr(target, "is_enabled"):
-        if not _wait_until(lambda: target.is_enabled(), timeout):
-            raise TimeoutError("element not enabled")
-
-    # Heuristic overlay detection.  Some UI frameworks expose properties like
-    # ``has_overlay`` or ``is_obscured``.  We introspect for any attribute whose
-    # name hints at the element being obscured and wait until it evaluates to
-    # ``False``.  When such attribute stays truthy past the timeout a
-    # ``RuntimeError`` is raised signalling that the element is covered by an
-    # overlay.
     keywords = ("overlay", "obscur", "cover", "block")
-    overlay_attr = None
     for name in dir(target):
         if name.startswith("_"):
             continue
         lname = name.lower()
         if any(key in lname for key in keywords):
-            overlay_attr = name
-            break
-
-    if overlay_attr:
-        attr = getattr(target, overlay_attr)
-
-        def _has_overlay() -> bool:
+            attr = getattr(target, name)
             try:
                 value = attr() if callable(attr) else attr
             except TypeError:
@@ -413,9 +393,29 @@ def _ensure_ready(target: Any, timeout: int) -> None:
             except Exception:
                 return True
             return bool(value)
+    return False
 
-        if not _wait_until(lambda: not _has_overlay(), timeout):
-            raise RuntimeError("element obscured")
+
+def _ensure_ready(target: Any, timeout: int) -> None:
+    """Wait until the element is visible, enabled and unobstructed."""
+
+    start = time.time()
+    while True:
+        if hasattr(target, "is_visible"):
+            if not _wait_until(lambda: target.is_visible(), timeout):
+                raise TimeoutError("element not visible")
+        if hasattr(target, "is_enabled"):
+            if not _wait_until(lambda: target.is_enabled(), timeout):
+                raise TimeoutError("element not enabled")
+
+        if _element_has_overlay(target):
+            elapsed = int((time.time() - start) * 1000)
+            remaining = max(0, timeout - elapsed)
+            if remaining <= 0 or not _wait_until(lambda: not _element_has_overlay(target), remaining):
+                raise RuntimeError("element obscured")
+            # Overlay disappeared, re-check visibility/enabled
+            continue
+        break
 
     # Verify the element can be interacted with using hit-testing or pixel checks.
     if hasattr(target, "hit_test"):
