@@ -320,3 +320,81 @@ def test_click_xy_basis_preview(monkeypatch):
     assert coords == (3, 4)
     assert calls == []
 
+
+def test_right_click_hover_scroll_drag_drop(monkeypatch):
+    ctx = build_ctx()
+
+    class Elem:
+        def __init__(self, left=10, top=20, width=30, height=40):
+            self.left = left
+            self.top = top
+            self.width = width
+            self.height = height
+
+        def is_visible(self):
+            return True
+
+        def is_enabled(self):
+            return True
+
+    elem = Elem()
+    monkeypatch.setattr(actions, "resolve_selector", lambda s: {"strategy": "mock", "target": elem})
+
+    calls = []
+
+    def rightClick(x, y):
+        calls.append(("rc", x, y))
+
+    def moveTo(x, y):
+        calls.append(("mv", x, y))
+
+    def scroll(amount):
+        calls.append(("sc", amount))
+
+    def dragTo(x, y, duration=0, button="left"):
+        calls.append(("dd", x, y, duration, button))
+
+    sys.modules["pyautogui"] = types.SimpleNamespace(
+        rightClick=rightClick, moveTo=moveTo, scroll=scroll, dragTo=dragTo
+    )
+
+    # right_click uses element centre
+    actions.right_click(Step(id="r", action="right_click", selector={"mock": {}}), ctx)
+    assert calls == [("rc", 25, 40)]
+
+    # hover moves cursor to centre
+    calls.clear()
+    actions.hover(Step(id="h", action="hover", selector={"mock": {}}), ctx)
+    assert calls == [("mv", 25, 40)]
+
+    # scroll moves then scrolls
+    calls.clear()
+    actions.scroll(
+        Step(id="s", action="scroll", selector={"mock": {}}, params={"clicks": 5}),
+        ctx,
+    )
+    assert calls == [("mv", 25, 40), ("sc", 5)]
+
+    # drag_drop from source to destination
+    src = Elem()
+    dst = Elem(left=100, top=200)
+
+    def mock_resolve(sel):
+        if "src" in sel:
+            return {"strategy": "mock", "target": src}
+        return {"strategy": "mock", "target": dst}
+
+    monkeypatch.setattr(actions, "resolve_selector", mock_resolve)
+    calls.clear()
+    actions.drag_drop(
+        Step(
+            id="d",
+            action="drag_drop",
+            selector={"src": {}},
+            params={"target": {"dst": {}}, "duration": 0},
+        ),
+        ctx,
+    )
+    assert calls[0] == ("mv", 25, 40)
+    assert calls[1] == ("dd", 115, 220, 0, "left")
+
