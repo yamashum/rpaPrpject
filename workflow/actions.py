@@ -473,28 +473,52 @@ def _ensure_ready(target: Any, timeout: int) -> None:
 def _scroll_row_into_view(row: Any, timeout: int) -> None:
     """Attempt to bring a table row into view by scrolling."""
 
-    visible = True
-    if hasattr(row, "is_visible"):
-        try:
-            visible = bool(row.is_visible())
-        except Exception:
-            visible = True
-    if visible:
+    def _is_visible() -> bool:
+        if hasattr(row, "is_visible"):
+            try:
+                return bool(row.is_visible())
+            except Exception:
+                return True
+        return True
+
+    def _is_offscreen() -> bool:
+        if hasattr(row, "is_offscreen"):
+            try:
+                return bool(row.is_offscreen())
+            except Exception:
+                return False
+        return False
+
+    if _is_visible() and not _is_offscreen():
         return
 
-    if hasattr(row, "scroll_into_view"):
-        try:
-            row.scroll_into_view()
-        except Exception:
-            pass
-    elif hasattr(row, "table") and hasattr(row.table, "scroll_to_row"):
-        try:
-            row.table.scroll_to_row(row)
-        except Exception:
-            pass
+    start = time.time()
+    max_scrolls = 10
+
+    for _ in range(max_scrolls):
+        remaining = timeout - int((time.time() - start) * 1000)
+        if remaining <= 0:
+            break
+
+        if hasattr(row, "scroll_into_view"):
+            try:
+                row.scroll_into_view()
+            except Exception:
+                pass
+        elif hasattr(row, "table") and hasattr(row.table, "scroll_to_row"):
+            try:
+                row.table.scroll_to_row(row)
+            except Exception:
+                pass
+
+        if hasattr(row, "is_visible") or hasattr(row, "is_offscreen"):
+            if _wait_until(lambda: _is_visible() and not _is_offscreen(), remaining):
+                return
+        else:
+            time.sleep(0.1)
 
     if hasattr(row, "is_visible"):
-        _wait_until(lambda: bool(row.is_visible()), timeout)
+        _wait_until(lambda: bool(row.is_visible()), max(0, timeout - int((time.time() - start) * 1000)))
 
 
 def _element_center(target: Any) -> tuple[int, int]:
