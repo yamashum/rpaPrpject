@@ -211,6 +211,16 @@ class Runner:
                 last_exc = exc
                 log["result"] = "error"
                 log["error"] = str(exc)
+                # ----- onError handling -----
+                oe = step.onError or {}
+                if oe.get("screenshot"):
+                    self._take_screenshot(step, ctx, exc)
+                if oe.get("recover"):
+                    self._recover(oe["recover"], ctx)
+                if oe.get("continue"):
+                    print(json.dumps(log))
+                    ctx.pop_local()
+                    return
                 if attempt == retry:
                     print(json.dumps(log))
                     ctx.pop_local()
@@ -230,3 +240,19 @@ class Runner:
 
     def stop(self) -> None:
         self.stopped = True
+
+    # ----- error helpers -----
+    def _take_screenshot(self, step: Step, ctx: ExecutionContext, exc: Exception) -> None:
+        """Placeholder screenshot handler.
+
+        Real implementation would capture the current screen. Here we simply
+        emit a log entry so tests can verify it was invoked."""
+        print(json.dumps({"stepId": step.id, "action": "screenshot", "error": str(exc)}))
+
+    def _recover(self, recover_spec: Any, ctx: ExecutionContext) -> None:
+        """Execute recovery steps specified in ``onError.recover``."""
+        steps_data = recover_spec
+        if not isinstance(steps_data, list):
+            steps_data = [steps_data]
+        steps = Flow._load_steps(steps_data)
+        self._run_steps(steps, ctx)

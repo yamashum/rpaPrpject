@@ -1,0 +1,64 @@
+import pytest
+
+from workflow.flow import Flow, Meta, Step
+from workflow.runner import ExecutionContext, Runner
+from workflow.actions import BUILTIN_ACTIONS
+
+
+def failing_action(step, ctx):
+    raise ValueError("boom")
+
+
+def build_runner():
+    runner = Runner()
+    # register builtins
+    for name, func in BUILTIN_ACTIONS.items():
+        runner.register_action(name, func)
+    runner.register_action("fail", failing_action)
+    return runner
+
+
+def make_ctx(step):
+    flow = Flow(version="1", meta=Meta(name="t"), steps=[step])
+    return ExecutionContext(flow, {})
+
+
+def test_on_error_screenshot_called(monkeypatch):
+    step = Step(id="s", action="fail", onError={"screenshot": True})
+    ctx = make_ctx(step)
+    runner = build_runner()
+    called = {}
+
+    def fake_shot(step, ctx, exc):
+        called["yes"] = True
+
+    monkeypatch.setattr(runner, "_take_screenshot", fake_shot)
+
+    with pytest.raises(ValueError):
+        runner._run_steps([step], ctx)
+
+    assert called.get("yes") is True
+
+
+def test_on_error_recover_and_continue():
+    recover_step = {"id": "r", "action": "set", "params": {"name": "x", "value": 1}}
+    step = Step(id="s", action="fail", onError={"recover": recover_step, "continue": True})
+    ctx = make_ctx(step)
+    runner = build_runner()
+
+    runner._run_steps([step], ctx)
+
+    assert ctx.get_var("x") == 1
+
+
+def test_on_error_continue_skips_exception():
+    step1 = Step(id="s", action="fail", onError={"continue": True})
+    step2 = Step(id="after", action="set", params={"name": "y", "value": 5})
+    flow = Flow(version="1", meta=Meta(name="t"), steps=[step1, step2])
+    ctx = ExecutionContext(flow, {})
+    runner = build_runner()
+
+    runner._run_steps(flow.steps, ctx)
+
+    assert ctx.get_var("y") == 5
+
