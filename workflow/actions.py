@@ -255,6 +255,33 @@ def _ensure_ready(target: Any, timeout: int) -> None:
             raise RuntimeError("element obscured")
 
 
+def _scroll_row_into_view(row: Any, timeout: int) -> None:
+    """Attempt to bring a table row into view by scrolling."""
+
+    visible = True
+    if hasattr(row, "is_visible"):
+        try:
+            visible = bool(row.is_visible())
+        except Exception:
+            visible = True
+    if visible:
+        return
+
+    if hasattr(row, "scroll_into_view"):
+        try:
+            row.scroll_into_view()
+        except Exception:
+            pass
+    elif hasattr(row, "table") and hasattr(row.table, "scroll_to_row"):
+        try:
+            row.table.scroll_to_row(row)
+        except Exception:
+            pass
+
+    if hasattr(row, "is_visible"):
+        _wait_until(lambda: bool(row.is_visible()), timeout)
+
+
 def click(step: Step, ctx: ExecutionContext) -> Any:
     """Click an element resolved from ``selector`` with retries."""
 
@@ -512,6 +539,65 @@ def find_table_row(step: Step, ctx: ExecutionContext) -> Any:
     return table.find_row(criteria)
 
 
+def select_row(step: Step, ctx: ExecutionContext) -> Any:
+    """Select a table row, scrolling it into view if necessary."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    for attempt in range(retries + 1):
+        resolved = _resolve_with_wait(selector, timeout)
+        row = resolved["target"]
+        try:
+            _scroll_row_into_view(row, timeout)
+            _ensure_ready(row, timeout)
+            if hasattr(row, "select"):
+                row.select()
+            elif hasattr(row, "click"):
+                row.click()
+            else:
+                raise AttributeError("row not selectable")
+            return True
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return True
+
+
+def double_click_row(step: Step, ctx: ExecutionContext) -> Any:
+    """Double-click a table row, scrolling it into view if necessary."""
+
+    selector = step.selector or step.params.get("selector") or {}
+    timeout = step.params.get("timeout", 3000)
+    retries = step.params.get("retry", 0)
+    for attempt in range(retries + 1):
+        resolved = _resolve_with_wait(selector, timeout)
+        row = resolved["target"]
+        try:
+            _scroll_row_into_view(row, timeout)
+            _ensure_ready(row, timeout)
+            if hasattr(row, "double_click"):
+                row.double_click()
+            elif hasattr(row, "click"):
+                row.click()
+                row.click()
+            else:
+                raise AttributeError("row not double clickable")
+            return True
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "overlay" in msg or "obscur" in msg or "cover" in msg or "block" in msg:
+                raise RuntimeError("Element obscured") from exc
+            if attempt >= retries:
+                raise
+            time.sleep(0.1)
+    return True
+
+
 def find_image(step: Step, ctx: ExecutionContext) -> Any:
     """Locate ``path`` on screen using ``pyautogui``."""
 
@@ -594,6 +680,8 @@ _UI_ACTIONS = [
     "ocr_read",
     "click_xy",
     "table.find_row",
+    "row.select",
+    "row.double_click",
 ]
 
 for _name in _UI_ACTIONS:
@@ -616,6 +704,8 @@ BUILTIN_ACTIONS.update(
         "find_image": find_image,
         "ocr_read": ocr_read,
         "table.find_row": find_table_row,
+        "row.select": select_row,
+        "row.double_click": double_click_row,
     }
 )
 
