@@ -40,7 +40,20 @@ def test_web_permission(tmp_path):
     assert runner.run_flow(flow_ok, {}) == {}
 
 
-def test_office_permission(tmp_path):
+def test_desktop_image_permission(tmp_path):
+    step = Step(id="s", action="find_image", params={"path": "img.png"})
+    flow = Flow(version="1", meta=Meta(name="t"), steps=[step])
+    runner = build_runner(tmp_path)
+
+    with pytest.raises(PermissionError):
+        runner.run_flow(flow, {})
+
+    runner.register_action("find_image", lambda step, ctx: True)
+    flow_ok = Flow(version="1", meta=Meta(name="t", permissions=["desktop.image"]), steps=[step])
+    assert runner.run_flow(flow_ok, {}) == {}
+
+
+def test_excel_permission(tmp_path):
     step = Step(id="s", action="excel.open", params={"path": "file.xlsx"})
     flow = Flow(version="1", meta=Meta(name="t"), steps=[step])
     runner = build_runner(tmp_path)
@@ -49,6 +62,19 @@ def test_office_permission(tmp_path):
         runner.run_flow(flow, {})
 
     runner.register_action("excel.open", lambda step, ctx: True)
+    flow_ok = Flow(version="1", meta=Meta(name="t", permissions=["excel.com"]), steps=[step])
+    assert runner.run_flow(flow_ok, {}) == {}
+
+
+def test_office_permission(tmp_path):
+    step = Step(id="s", action="word.open", params={"path": "file.docx"})
+    flow = Flow(version="1", meta=Meta(name="t"), steps=[step])
+    runner = build_runner(tmp_path)
+
+    with pytest.raises(PermissionError):
+        runner.run_flow(flow, {})
+
+    runner.register_action("word.open", lambda step, ctx: True)
     flow_ok = Flow(version="1", meta=Meta(name="t", permissions=["office"]), steps=[step])
     assert runner.run_flow(flow_ok, {}) == {}
 
