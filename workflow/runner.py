@@ -21,6 +21,9 @@ from .hooks import apply_screenshot_mask
 from . import scheduler
 from .flow_signature import verify_flow
 
+# Supported high-level flow operations
+FLOW_OPERATIONS = {"view", "run", "edit", "publish", "approve"}
+
 # Mapping of action names to required roles
 SENSITIVE_ACTION_ROLES: Dict[str, Set[str]] = {
     "prompt.input": {"user"},
@@ -133,6 +136,9 @@ class ExecutionContext:
         }
         self.allowed_permissions: Set[str] = set(self.flow.meta.permissions)
         self.locals_stack: List[Dict[str, Any]] = []
+        self.flow_roles: Dict[str, Set[str]] = {
+            op: set(r) for op, r in getattr(self.flow.meta, "roles", {}).items()
+        }
         roles_input = self.inputs.get("roles")
         if isinstance(roles_input, (list, set, tuple)):
             self.roles = set(roles_input)
@@ -149,6 +155,14 @@ class ExecutionContext:
         if required and not required.issubset(self.roles):
             raise PermissionError(
                 f"Action requires roles {sorted(required)}"
+            )
+
+    def require_flow_op(self, operation: str) -> None:
+        """Ensure that the current roles allow ``operation`` on the flow."""
+        required = self.flow_roles.get(operation, set())
+        if required and not required.issubset(self.roles):
+            raise PermissionError(
+                f"Flow operation '{operation}' requires roles {sorted(required)}"
             )
 
     def require_approval(self, level: int) -> None:
@@ -322,6 +336,7 @@ class Runner:
         self._acquire_lock()
         try:
             ctx = ExecutionContext(flow, inputs or {})
+            ctx.require_flow_op("run")
             self._run_steps(flow.steps, ctx)
             return ctx.flow_vars
         finally:
@@ -330,6 +345,7 @@ class Runner:
     def resume_flow(self, flow: Flow, start_step_id: str, checkpoint_path: Path | str) -> Dict[str, Any]:
         state = json.loads(Path(checkpoint_path).read_text())
         ctx = ExecutionContext(flow, {})
+        ctx.require_flow_op("run")
         ctx.flow_vars.update(state.get("flow_vars", {}))
         ctx.globals.update(state.get("globals", {}))
         index = next((i for i, s in enumerate(flow.steps) if s.id == start_step_id), None)
