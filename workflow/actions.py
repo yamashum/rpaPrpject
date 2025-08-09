@@ -674,6 +674,59 @@ def ocr_read(step: Step, ctx: ExecutionContext) -> Any:
     return text.strip()
 
 
+def _send_hotkey(*keys: str) -> None:
+    """Send a hotkey combination using ``pyautogui``.
+
+    This helper centralises the optional dependency handling so callers only
+    need to provide the key sequence.  A :class:`RuntimeError` is raised when
+    ``pyautogui`` is unavailable which mirrors the behaviour of other helper
+    functions in this module.
+    """
+
+    try:  # pragma: no cover - optional dependency
+        import pyautogui  # type: ignore
+    except Exception as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("pyautogui not installed") from exc
+    pyautogui.hotkey(*keys)
+
+
+def ime_on(step: Step, ctx: ExecutionContext) -> Any:
+    """Turn the Input Method Editor on.
+
+    The operation is simulated by emitting the ``Ctrl+Space`` hotkey which is a
+    common toggle for IME on many platforms.  The current state is stored under
+    ``ctx.globals['ime_state']`` for testability.  When ``layout`` is provided it
+    is forwarded to :func:`switch_layout` to change the keyboard layout prior to
+    enabling the IME.
+    """
+
+    layout = step.params.get("layout")
+    if layout:
+        switch_layout(Step(id=step.id, action="layout.switch", params={"layout": layout}), ctx)
+    _send_hotkey("ctrl", "space")
+    ctx.globals["ime_state"] = "on"
+    return True
+
+
+def ime_off(step: Step, ctx: ExecutionContext) -> Any:
+    """Turn the Input Method Editor off via ``Ctrl+Space`` hotkey."""
+
+    _send_hotkey("ctrl", "space")
+    ctx.globals["ime_state"] = "off"
+    return True
+
+
+def switch_layout(step: Step, ctx: ExecutionContext) -> Any:
+    """Switch the keyboard layout using ``Alt+Shift`` hotkey."""
+
+    layout = step.params.get("layout")
+    if not layout:
+        raise ValueError("layout.switch requires 'layout'")
+    _send_hotkey("alt", "shift")
+    ctx.globals["keyboard_layout"] = layout
+    return layout
+
+
 def _stub_action(step: Step, ctx: ExecutionContext) -> Any:
     """Placeholder for unimplemented UI actions.
 
@@ -755,3 +808,11 @@ BUILTIN_ACTIONS.update(WEB_ACTIONS)
 BUILTIN_ACTIONS.update(OFFICE_ACTIONS)
 BUILTIN_ACTIONS.update(WORD_ACTIONS)
 BUILTIN_ACTIONS.update(OUTLOOK_ACTIONS)
+
+BUILTIN_ACTIONS.update(
+    {
+        "ime.on": ime_on,
+        "ime.off": ime_off,
+        "layout.switch": switch_layout,
+    }
+)

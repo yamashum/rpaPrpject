@@ -5,6 +5,7 @@ from workflow.actions import BUILTIN_ACTIONS
 from workflow.flow import Step, Flow, Meta
 from workflow.runner import ExecutionContext
 from workflow.selector import normalize_selector, suggest_selector, resolve, SelectionError
+import workflow.selector as sel
 
 
 def make_context():
@@ -50,3 +51,12 @@ def test_stats_persist_on_failure(tmp_path):
     data = json.loads((run_dir / "selector_stats.json").read_text())
     assert data["uia"]["attempts"] == 1
     assert data["uia"]["success"] == 0
+
+
+def test_vdi_fallback(monkeypatch):
+    """Image strategy is prioritised when running in VDI mode."""
+
+    monkeypatch.setenv("VDI_MODE", "1")
+    sel._HIT_STATS = {name: {"attempts": 0, "success": 0} for name in sel._STRATEGIES}
+    result = resolve({"uia": {"exists": True}, "image": {"path": "btn.png"}})
+    assert result["strategy"] == "image"

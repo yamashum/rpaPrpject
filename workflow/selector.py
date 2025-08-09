@@ -116,6 +116,8 @@ def resolve(selector: Dict[str, Any], run_dir: Path | str | None = None) -> Dict
 
     strategies = [name for name in selector if name in _STRATEGIES]
     base_order = ["uia", "win32", "anchor", "image", "coordinate"]
+    if os.getenv("RPA_VDI") or os.getenv("VDI") or os.getenv("VDI_MODE"):
+        base_order = ["image", "coordinate", "uia", "win32", "anchor"]
 
     def rate(name: str) -> float:
         stats = _HIT_STATS.get(name, {"attempts": 0, "success": 0})
