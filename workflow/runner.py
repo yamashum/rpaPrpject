@@ -92,11 +92,11 @@ ACTION_PERMISSIONS: Dict[str, str] = {
     "http.get": "http",
     "http.post": "http",
     # File system actions
-    "file.read": "file",
-    "file.write": "file",
-    "file.copy": "file",
-    "file.move": "file",
-    "file.delete": "file",
+    "file.read": "files",
+    "file.write": "files",
+    "file.copy": "files",
+    "file.move": "files",
+    "file.delete": "files",
 }
 
 
