@@ -17,11 +17,16 @@ class Meta:
 
 @dataclass
 class Defaults:
-    """Default settings for all steps."""
+    """Default settings for all steps.
 
-    timeoutMs: int = 3000
-    retry: int = 0
-    envProfile: str = "default"
+    ``timeoutMs`` and ``retry`` are optional and, when not provided, fall back
+    to the values defined by the active execution profile (see
+    :mod:`workflow.config`).
+    """
+
+    timeoutMs: Optional[int] = None
+    retry: Optional[int] = None
+    envProfile: str = "physical"
 
 
 @dataclass
