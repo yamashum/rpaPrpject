@@ -92,3 +92,7 @@ _UI_ACTIONS = [
 
 for _name in _UI_ACTIONS:
     BUILTIN_ACTIONS[_name] = _stub_action
+
+from .actions_web import WEB_ACTIONS
+
+BUILTIN_ACTIONS.update(WEB_ACTIONS)
