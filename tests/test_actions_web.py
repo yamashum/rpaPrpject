@@ -8,6 +8,8 @@ from workflow.runner import ExecutionContext
 from workflow.actions_web import (
     open as web_open,
     click as web_click,
+    dblclick as web_dblclick,
+    right_click as web_right_click,
     fill as web_fill,
     select as web_select,
     upload as web_upload,
@@ -30,6 +32,8 @@ def test_playwright_actions(tmp_path):
         "<select id='sel'><option value='a'>A</option><option value='b'>B</option></select>"
         "<input id='file' type='file'>"
         "<button id='btn' onclick=\"document.getElementById('result').textContent=document.getElementById('name').value\">Go</button>"
+        "<button id='dbl' ondblclick=\"document.getElementById('result').textContent='dbl'\">Dbl</button>"
+        "<div id='rc' oncontextmenu=\"event.preventDefault();document.getElementById('result').textContent='rc'\">RC</div>"
         "<div id='result'></div>"
         "<a id='dl' href='data:text/plain,hello' download='hello.txt'>Download</a>"
         "</body></html>"
@@ -71,6 +75,20 @@ def test_playwright_actions(tmp_path):
     dl_path = tmp_path / "hello.txt"
     web_download(Step(id="dl", action="download", params={"selector": "#dl", "path": str(dl_path)}), ctx)
     assert dl_path.exists()
+
+    web_dblclick(Step(id="dbl", action="dblclick", params={"selector": "#dbl"}), ctx)
+    web_wait_for(
+        Step(id="wdbl", action="wait_for", params={"selector": "#result:has-text('dbl')"}),
+        ctx,
+    )
+    assert page.inner_text("#result") == "dbl"
+
+    web_right_click(Step(id="rc", action="right_click", params={"selector": "#rc"}), ctx)
+    web_wait_for(
+        Step(id="wrc", action="wait_for", params={"selector": "#result:has-text('rc')"}),
+        ctx,
+    )
+    assert page.inner_text("#result") == "rc"
 
     ctx.globals["_browser"].close()
     ctx.globals["_playwright"].stop()
@@ -121,6 +139,37 @@ def test_download_verification(tmp_path):
         Step(id="dl2", action="download", params={"selector": "dl", "path": str(dest)}), ctx
     )
     assert dest.exists() and dest.read_text() == "hello"
+    ctx.globals["_browser"].close()
+    ctx.globals["_playwright"].stop()
+
+
+def test_wait_for_enabled_and_response(tmp_path):
+    html = (
+        "<html><body>"
+        "<button id='en' disabled>En</button>"
+        "<script>setTimeout(() => {document.getElementById('en').disabled = false;}, 50);"
+        "function trigger(){setTimeout(() => fetch('/test'), 50);}</script>"
+        "</body></html>"
+    )
+    page_file = tmp_path / "index.html"
+    page_file.write_text(html)
+    ctx = build_ctx()
+    web_open(Step(id="open", action="open", params={"url": page_file.as_uri()}), ctx)
+    page = ctx.globals["_page"]
+    page.route("**/test", lambda route: route.fulfill(body="ok"))
+
+    web_wait_for(
+        Step(id="en", action="wait_for", params={"preset": "enabled", "selector": "#en"}),
+        ctx,
+    )
+    assert page.is_enabled("#en")
+
+    page.evaluate("trigger()")
+    web_wait_for(
+        Step(id="resp", action="wait_for", params={"preset": "response", "url": "/test"}),
+        ctx,
+    )
+
     ctx.globals["_browser"].close()
     ctx.globals["_playwright"].stop()
 

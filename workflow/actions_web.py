@@ -1,7 +1,8 @@
 """Web automation actions implemented using Playwright.
 
-Available actions: ``open``, ``click``, ``fill``, ``select``, ``upload``,
-``wait_for``, ``download``, ``evaluate`` and ``screenshot``.
+Available actions: ``open``, ``click``, ``dblclick``, ``right_click``,
+``fill``, ``select``, ``upload``, ``wait_for``, ``download``, ``evaluate``
+and ``screenshot``.
 """
 from __future__ import annotations
 
@@ -113,6 +114,47 @@ def click(step: Step, ctx: ExecutionContext) -> Any:
         raise RuntimeError("Element obscured") from (last_exc or exc)
 
 
+def dblclick(step: Step, ctx: ExecutionContext) -> Any:
+    selector = step.params["selector"]
+    frame = step.params.get("frame")
+    page = _get_page(ctx)
+    target = page.frame_locator(frame) if frame else page
+    last_exc: Exception | None = None
+    for sel in normalize_selector(selector):
+        loc = target.locator(sel)
+        if not loc.count():
+            continue
+        try:
+            loc.dblclick()
+            return sel
+        except Exception as exc:  # pragma: no cover - overlay or stale element
+            last_exc = exc
+            continue
+    try:
+        target.locator(selector).dblclick()
+        return selector
+    except Exception as exc:  # pragma: no cover - all selectors failed
+        raise RuntimeError("Element obscured") from (last_exc or exc)
+
+
+def right_click(step: Step, ctx: ExecutionContext) -> Any:
+    selector = step.params["selector"]
+    frame = step.params.get("frame")
+    page = _get_page(ctx)
+    target = page.frame_locator(frame) if frame else page
+    for sel in normalize_selector(selector):
+        loc = target.locator(sel)
+        if not loc.count():
+            continue
+        try:
+            loc.click(button="right")
+            return sel
+        except Exception:
+            continue
+    target.locator(selector).click(button="right")
+    return selector
+
+
 def fill(step: Step, ctx: ExecutionContext) -> Any:
     selector = step.params["selector"]
     value = step.params.get("value", "")
@@ -186,6 +228,7 @@ def wait_for(step: Step, ctx: ExecutionContext) -> Any:
     page = _get_page(ctx)
 
     preset = step.params.get("preset")
+    target = page.frame_locator(frame) if frame else page
     if preset == "networkidle":
         page.wait_for_load_state("networkidle", timeout=timeout)
         return "networkidle"
@@ -194,6 +237,25 @@ def wait_for(step: Step, ctx: ExecutionContext) -> Any:
         if not url:
             raise RuntimeError("No url provided for preset 'url'")
         page.wait_for_url(url, timeout=timeout)
+        return url
+    if preset == "enabled":
+        selector = step.params.get("selector")
+        if not selector:
+            raise RuntimeError("No selector provided for preset 'enabled'")
+        for sel in normalize_selector(selector):
+            loc = target.locator(sel)
+            try:
+                loc.wait_for(state="editable", timeout=timeout)
+                return sel
+            except Exception:
+                continue
+        target.locator(selector).wait_for(state="editable", timeout=timeout)
+        return selector
+    if preset == "response":
+        url = step.params.get("url")
+        if not url:
+            raise RuntimeError("No url provided for preset 'response'")
+        page.wait_for_response(url, timeout=timeout)
         return url
 
     # Wait for selector
@@ -327,6 +389,8 @@ def screenshot(step: Step, ctx: ExecutionContext) -> Any:
 WEB_ACTIONS = {
     "open": open,
     "click": click,
+    "dblclick": dblclick,
+    "right_click": right_click,
     "fill": fill,
     "select": select,
     "upload": upload,
