@@ -62,18 +62,25 @@ DPI(`dpi`)を指定できるようになりました。これらのパラメー�
 ## 環境チェックのフック
 
 `CronScheduler.add_job` は環境を確認するための条件コールバックを
-受け取れるようになりました。例えば VPN に接続している場合のみ
-ジョブを実行したいときは以下のように指定します。
+受け取れます。`workflow.scheduler` にはよく使うチェックとして
+`is_vpn_connected`、`is_ac_powered`、`is_screen_locked` のヘルパー関数を
+用意しました。例えば VPN 接続かつ AC 電源使用時のみジョブを実行する
+には次のように指定します。
 
 ```python
-from workflow.scheduler import CronScheduler
-
-def is_vpn_connected():
-    # 実際のチェックは環境に合わせて実装
-    return True
+from workflow.scheduler import (
+    CronScheduler,
+    is_vpn_connected,
+    is_ac_powered,
+)
 
 s = CronScheduler()
-s.add_job("0 * * * * *", job, "job.lock", conditions=[is_vpn_connected])
+s.add_job(
+    "0 * * * * *",
+    job,
+    "job.lock",
+    conditions=[is_vpn_connected, is_ac_powered],
+)
 ```
 
 条件関数が `False` を返した場合、そのジョブはスキップされます。

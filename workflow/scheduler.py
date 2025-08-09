@@ -5,10 +5,16 @@ import json
 import os
 import platform
 import time
+import re
+import subprocess
+import sys
+import ctypes
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional
+
+_POWER_SUPPLY_BASE = Path("/sys/class/power_supply")
 
 
 def _match_field(field: str, value: int) -> bool:
@@ -39,6 +45,125 @@ def _cron_match(expr: str, dt: datetime) -> bool:
         (weekday, dt.weekday()),
     ]
     return all(_match_field(f, v) for f, v in checks)
+
+
+def is_vpn_connected() -> bool:
+    """Return True if a VPN network interface appears to be active.
+
+    The check looks for common interface names such as ``tun``, ``tap`` or
+    ``ppp`` using platform specific commands. The result is heuristic and
+    ``False`` is returned when the status cannot be determined.
+    """
+    try:
+        if sys.platform.startswith("win"):
+            output = subprocess.run(
+                ["ipconfig"], capture_output=True, text=True, check=False
+            ).stdout.lower()
+            tokens = ("vpn", "ppp adapter", "tun", "tap")
+            return any(tok in output for tok in tokens)
+        else:
+            output = ""
+            for cmd in (["ip", "addr"], ["ifconfig"]):
+                try:
+                    output = subprocess.run(
+                        cmd, capture_output=True, text=True, check=False
+                    ).stdout
+                    break
+                except FileNotFoundError:
+                    continue
+            return bool(re.search(r"\b(tun|tap|ppp)\d", output))
+    except Exception:
+        return False
+
+
+def is_ac_powered() -> bool:
+    """Return True if the system is running on AC power.
+
+    Attempts to query platform specific APIs and falls back to ``False`` when
+    the status cannot be determined.
+    """
+    try:
+        if sys.platform.startswith("win"):
+            class SYSTEM_POWER_STATUS(ctypes.Structure):
+                _fields_ = [
+                    ("ACLineStatus", ctypes.c_byte),
+                    ("BatteryFlag", ctypes.c_byte),
+                    ("BatteryLifePercent", ctypes.c_byte),
+                    ("Reserved1", ctypes.c_byte),
+                    ("BatteryLifeTime", ctypes.c_ulong),
+                    ("BatteryFullLifeTime", ctypes.c_ulong),
+                ]
+
+            status = SYSTEM_POWER_STATUS()
+            if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
+                return status.ACLineStatus == 1
+            return False
+        elif sys.platform == "darwin":
+            output = subprocess.run(
+                ["pmset", "-g", "ps"], capture_output=True, text=True, check=False
+            ).stdout
+            return "AC Power" in output
+        else:
+            base = _POWER_SUPPLY_BASE
+            if not base.exists():
+                return False
+            for path in base.glob("*"):
+                try:
+                    if (path / "online").read_text().strip() == "1":
+                        return True
+                except FileNotFoundError:
+                    continue
+            return False
+    except Exception:
+        return False
+
+
+def is_screen_locked() -> bool:
+    """Return True if the current desktop session is locked.
+
+    The detection is best-effort and returns ``False`` when unsupported on the
+    current platform.
+    """
+    try:
+        if sys.platform.startswith("win"):
+            user32 = ctypes.windll.user32
+            DESKTOP_SWITCHDESKTOP = 0x0100
+            handle = user32.OpenDesktopW("Default", 0, False, DESKTOP_SWITCHDESKTOP)
+            if not handle:
+                return False
+            try:
+                return not user32.SwitchDesktop(handle)
+            finally:
+                user32.CloseDesktop(handle)
+        elif sys.platform == "darwin":
+            output = subprocess.run(
+                [
+                    "python3",
+                    "-c",
+                    "import Quartz,sys;"
+                    "d=Quartz.CGSessionCopyCurrentDictionary();"
+                    "print(d.get('CGSSessionScreenIsLocked',0))",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            ).stdout.strip()
+            return output == "1"
+        else:
+            try:
+                output = subprocess.run(
+                    ["gnome-screensaver-command", "-q"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                ).stdout
+                if "is active" in output:
+                    return True
+            except FileNotFoundError:
+                pass
+            return False
+    except Exception:
+        return False
 
 
 def capture_crash(exc: Exception, log_file: Optional[Path], report_dir: Path) -> Path:
