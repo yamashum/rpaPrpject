@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, Optional
 
 
 def log_step(
@@ -12,6 +12,7 @@ def log_step(
     action: str,
     duration: float,
     result: str,
+    redact: Optional[Iterable[str]] = None,
     **extra: Any,
 ) -> None:
     """Append a step execution record to the run log.
@@ -30,6 +31,8 @@ def log_step(
         Duration of the step in milliseconds.
     result: str
         Result of the step (e.g. ``"ok"`` or ``"error"``).
+    redact: Iterable[str], optional
+        Names of fields whose values should be redacted in the log.
     extra: dict
         Additional fields to include in the log record.
     """
@@ -42,6 +45,10 @@ def log_step(
         "result": result,
     }
     record.update(extra)
+    if redact:
+        for field in redact:
+            if field in record:
+                record[field] = "***"
     log_path = run_dir / "log.jsonl"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as fh:

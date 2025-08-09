@@ -1,4 +1,5 @@
 import builtins
+import getpass
 from workflow.flow import Flow, Meta, Step
 from workflow.runner import ExecutionContext
 from workflow.actions import prompt_input, prompt_confirm, prompt_select
@@ -10,6 +11,14 @@ def test_prompt_input_returns_default(monkeypatch):
     ctx = ExecutionContext(flow, {})
     monkeypatch.setattr(builtins, "input", lambda prompt="": "")
     assert prompt_input(step, ctx) == "x"
+
+
+def test_prompt_input_mask(monkeypatch):
+    step = Step(id="p2", action="prompt.input", params={"message": "Enter", "mask": True})
+    flow = Flow(version="1", meta=Meta(name="test"))
+    ctx = ExecutionContext(flow, {})
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": "secret")
+    assert prompt_input(step, ctx) == "secret"
 
 
 def test_prompt_confirm_default(monkeypatch):
