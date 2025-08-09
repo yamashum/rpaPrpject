@@ -12,8 +12,8 @@ def make_context():
 
 def test_fallback_to_image_selector():
     """When UIA fails, the resolver should use the image selector."""
-    step = Step(id="s1", action="launch", selector={"uia": {"exists": False}, "image": {"path": "btn.png"}})
+    step = Step(id="s1", action="attach", selector={"uia": {"exists": False}, "image": {"path": "btn.png"}})
     ctx = make_context()
-    result = BUILTIN_ACTIONS["launch"](step, ctx)
+    result = BUILTIN_ACTIONS["attach"](step, ctx)
     assert result["strategy"] == "image"
     assert ctx.globals["learned_selectors"] == ["image"]
