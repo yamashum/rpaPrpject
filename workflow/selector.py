@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Simple selector resolver with multiple strategies."""
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, List
 
 
 class SelectionError(Exception):
@@ -75,3 +75,30 @@ def resolve(selector: Dict[str, Any]) -> Dict[str, Any]:
             continue
         return {"strategy": name, "target": resolved}
     raise SelectionError("No selector strategy could resolve the element")
+
+
+def _extract_token(selector: str) -> str:
+    """Extract a token suitable for ``data-testid`` from a selector."""
+
+    for sep in ["#", ".", " "]:
+        if sep in selector:
+            selector = selector.split(sep)[-1]
+    return selector
+
+
+def normalize_selector(selector: str) -> List[str]:
+    """Return candidate selectors prioritising ``data-testid``.
+
+    The returned list always contains a selector targeting ``data-testid``
+    followed by the original selector as a fallback.
+    """
+
+    token = _extract_token(selector)
+    return [f'[data-testid="{token}"]', selector]
+
+
+def suggest_selector(selector: str) -> str:
+    """Suggest a ``data-testid`` based selector for the given input."""
+
+    token = _extract_token(selector)
+    return f'[data-testid="{token}"]'
