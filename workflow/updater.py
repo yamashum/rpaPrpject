@@ -30,33 +30,44 @@ def apply_update(
 
     The function fetches the latest version from ``version_url``.  When the
     version differs from ``current_version`` a signed ZIP package is downloaded
-    from ``package_url`` and verified using ``key``.  The extracted contents are
-    then copied over ``install_dir``.
+    from ``package_url`` and verified using ``key``.  The current installation
+    is backed up before applying the update and restored if verification fails.
     """
     latest = check_version(version_url)
     if latest == current_version:
         return False
 
-    with tempfile.TemporaryDirectory() as tmp:
-        pkg = Path(tmp) / "update.zip"
-        sig = pkg.with_suffix(pkg.suffix + ".sig")
-        with urllib.request.urlopen(package_url) as resp:
-            pkg.write_bytes(resp.read())
-        with urllib.request.urlopen(package_url + ".sig") as resp:
-            sig.write_bytes(resp.read())
-        if not verify_package(pkg, key):
-            return False
-        extract_dir = Path(tmp) / "extracted"
-        with zipfile.ZipFile(pkg) as zf:
-            zf.extractall(extract_dir)
-        dest = Path(install_dir)
-        for src in extract_dir.rglob("*"):
-            dest_path = dest / src.relative_to(extract_dir)
-            if src.is_dir():
-                dest_path.mkdir(parents=True, exist_ok=True)
-            else:
-                dest_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dest_path)
+    dest = Path(install_dir)
+    backup = dest.with_suffix(dest.suffix + ".bak")
+    if backup.exists():
+        shutil.rmtree(backup)
+    if dest.exists():
+        dest.rename(backup)
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = Path(tmp) / "update.zip"
+            sig = pkg.with_suffix(pkg.suffix + ".sig")
+            with urllib.request.urlopen(package_url) as resp:
+                pkg.write_bytes(resp.read())
+            with urllib.request.urlopen(package_url + ".sig") as resp:
+                sig.write_bytes(resp.read())
+            if not verify_package(pkg, key):
+                raise ValueError("invalid package signature")
+            extract_dir = Path(tmp) / "extracted"
+            with zipfile.ZipFile(pkg) as zf:
+                zf.extractall(extract_dir)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(extract_dir, dest)
+    except Exception:
+        if backup.exists():
+            if dest.exists():
+                shutil.rmtree(dest)
+            backup.rename(dest)
+        raise
+    else:
+        if backup.exists():
+            shutil.rmtree(backup)
     return True
 
 
