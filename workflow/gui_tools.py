@@ -4,12 +4,81 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
-from .selector import analyze_selectors
+from .selector import analyze_selectors, normalize_selector
 
 try:  # pragma: no cover - optional GUI dependency
     from PyQt6.QtGui import QCursor
 except Exception:  # pragma: no cover - headless environments
     QCursor = None  # type: ignore
+
+
+# registry for anchors captured during spying
+_ANCHOR_REGISTRY: List[str] = []
+
+
+def highlight_screen(selector: str) -> None:
+    """Highlight ``selector`` on screen.
+
+    The real implementation would draw an overlay.  In tests this function can
+    be monkeypatched to assert that highlighting was requested.
+    """
+
+    # default implementation is a no-op; kept for test monkeypatching
+    return None
+
+
+def register_anchor(selector: str) -> None:
+    """Register ``selector`` as an anchor for later use."""
+
+    _ANCHOR_REGISTRY.append(selector)
+
+
+def _screen_dpi() -> int:
+    """Return the logical DPI of the primary screen.
+
+    Falls back to ``96`` when Qt is unavailable or does not expose the value.
+    A dedicated helper makes it easy to monkeypatch in unit tests.
+    """
+
+    if QCursor is None:  # pragma: no cover - exercised in headless tests
+        return 96
+    try:  # pragma: no cover - optional GUI dependency
+        from PyQt6.QtGui import QGuiApplication
+
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            return int(screen.logicalDotsPerInch())
+    except Exception:
+        pass
+    return 96
+
+
+def _grab_preview(x: int, y: int) -> Any:
+    """Return a small screenshot around ``(x, y)`` encoded as base64.
+
+    When capturing an image is not possible (e.g. in headless tests) the
+    coordinate tuple itself is returned instead.
+    """
+
+    if QCursor is None:  # pragma: no cover - exercised in headless tests
+        return (x, y)
+    try:  # pragma: no cover - optional GUI dependency
+        from PyQt6.QtGui import QGuiApplication
+        from PyQt6.QtCore import QBuffer, QIODevice
+        import base64
+
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            pixmap = screen.grabWindow(0, x - 10, y - 10, 20, 20)
+            if not pixmap.isNull():
+                buffer = QBuffer()
+                buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+                pixmap.save(buffer, "PNG")
+                data = bytes(buffer.data())
+                return base64.b64encode(data).decode("ascii")
+    except Exception:
+        pass
+    return (x, y)
 
 
 @dataclass
@@ -23,12 +92,13 @@ class ElementInfo:
 def element_spy(selector: str, text: str | None = None) -> ElementInfo:
     """Simulate an element spy utility.
 
-    The real application would present a crosshair cursor and allow the user to
-    select any UI element on screen.  For the purpose of unit tests and this
-    lightweight demo the function simply records the selector and optional text
-    label supplied by the caller.
+    In addition to recording the selector, the function highlights the element
+    on screen and registers it as an anchor.  Both behaviours are stubs that can
+    be monkeypatched in tests.
     """
 
+    highlight_screen(selector)
+    register_anchor(selector)
     return ElementInfo(selector=selector, text=text)
 
 
@@ -55,7 +125,7 @@ def capture_coordinates(
 
     if QCursor is None:  # pragma: no cover - exercised in headless tests
         x, y = 0, 0
-    else:
+    else:  # pragma: no cover - optional GUI dependency
         pos = QCursor.pos()
         x, y = pos.x(), pos.y()
 
@@ -64,22 +134,35 @@ def capture_coordinates(
         x -= ox
         y -= oy
 
-    result: Dict[str, Any] = {"x": x, "y": y, "basis": basis}
+    dpi = _screen_dpi()
+    result: Dict[str, Any] = {"x": x, "y": y, "basis": basis, "dpi": dpi}
     if preview:
-        result["preview"] = (x, y)
+        result["preview"] = _grab_preview(x, y)
     return result
 
 
-def record_web(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def record_web(
+    actions: List[Dict[str, Any]], flow: Dict[str, Any] | None = None
+) -> List[Dict[str, Any]]:
     """Record a sequence of web actions.
 
-    Currently the function echoes the supplied actions but augments any
-    selectors with stable attribute suggestions via
-    :func:`selector.analyze_selectors`.  Returning the list makes it convenient
-    to unit test and to directly wire into flow definitions.
+    Selectors for each action are normalised and augmented with suggestions via
+    :func:`selector.analyze_selectors`.  When ``flow`` is provided any action
+    containing an ``"id"`` field is inserted into the flow using
+    :func:`wire_to_flow`.
     """
 
-    return analyze_selectors(actions)
+    analyze_selectors(actions)
+    for action in actions:
+        sel = action.get("selector")
+        if isinstance(sel, str):
+            suggestions = action.get("selectorSuggestions") or normalize_selector(sel)
+            action["selector"] = suggestions[0]
+            action["selectorSuggestions"] = suggestions
+        if flow is not None and action.get("id"):
+            params = {k: v for k, v in action.items() if k != "id"}
+            wire_to_flow(flow, action["id"], params)
+    return actions
 
 
 def wire_to_flow(flow: Dict[str, Any], step_id: str, params: Dict[str, Any]) -> None:
