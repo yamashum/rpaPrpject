@@ -1,4 +1,8 @@
-"""Web automation actions implemented using Playwright."""
+"""Web automation actions implemented using Playwright.
+
+Available actions: ``open``, ``click``, ``fill``, ``select``, ``upload``,
+``wait_for``, ``download``, ``evaluate`` and ``screenshot``.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -122,6 +126,58 @@ def fill(step: Step, ctx: ExecutionContext) -> Any:
             return value
     target.locator(selector).fill(value)
     return value
+
+
+def select(step: Step, ctx: ExecutionContext) -> Any:
+    """Select option(s) in a ``<select>`` element."""
+    selector = step.params["selector"]
+    frame = step.params.get("frame")
+    page = _get_page(ctx)
+    target = page.frame_locator(frame) if frame else page
+    # Locate element prioritizing data-testid
+    for sel in normalize_selector(selector):
+        loc = target.locator(sel)
+        if loc.count():
+            chosen = loc
+            break
+    else:
+        chosen = target.locator(selector)
+
+    if "option" in step.params:
+        option = step.params["option"]
+        result = chosen.select_option(option)
+    elif "options" in step.params:
+        option = step.params["options"]
+        result = chosen.select_option(option)
+    else:
+        kwargs: dict[str, Any] = {}
+        for key in ("value", "label", "index"):
+            if key in step.params:
+                kwargs[key] = step.params[key]
+        if not kwargs:
+            raise RuntimeError("No option specified")
+        result = chosen.select_option(**kwargs)
+    return result
+
+
+def upload(step: Step, ctx: ExecutionContext) -> Any:
+    """Upload files using ``set_input_files``."""
+    selector = step.params["selector"]
+    files = step.params.get("files") or step.params.get("file") or step.params.get("path")
+    if not files:
+        raise RuntimeError("No files specified")
+    frame = step.params.get("frame")
+    page = _get_page(ctx)
+    target = page.frame_locator(frame) if frame else page
+    for sel in normalize_selector(selector):
+        loc = target.locator(sel)
+        if loc.count():
+            chosen = loc
+            break
+    else:
+        chosen = target.locator(selector)
+    chosen.set_input_files(files)
+    return files
 
 
 def wait_for(step: Step, ctx: ExecutionContext) -> Any:
@@ -272,6 +328,8 @@ WEB_ACTIONS = {
     "open": open,
     "click": click,
     "fill": fill,
+    "select": select,
+    "upload": upload,
     "wait_for": wait_for,
     "download": download,
     "evaluate": evaluate,

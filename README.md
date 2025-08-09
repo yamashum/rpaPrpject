@@ -33,6 +33,21 @@ python rpa_main_ui.py
 同時に複数のフローが動作しないようにしています。実行が終了するか `stop()`
 が呼び出されるとロックは解放され、ファイルも削除されます。
 
+## Web アクション
+
+Playwright を利用した Web ページ操作用のアクションをサポートしています。  
+利用可能なアクションの例:
+
+- `open`
+- `click`
+- `fill`
+- `select`
+- `upload`
+- `wait_for`
+- `download`
+- `evaluate`
+- `screenshot`
+
 ## 画像検索と座標の拡張
 
 `find_image` アクションはスケール(`scale`)、色の許容度(`tolerance`)、
