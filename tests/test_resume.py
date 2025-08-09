@@ -9,6 +9,7 @@ def test_resume_from_failed_step(tmp_path):
     flow_dict = {
         "version": "1.0",
         "meta": {"name": "test"},
+        "defaults": {"envProfile": "vdi"},
         "steps": [
             {"id": "s1", "action": "set", "params": {"name": "x", "value": 1}},
             {"id": "s2", "action": "fail_once"},
