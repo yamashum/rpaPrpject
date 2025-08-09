@@ -37,6 +37,27 @@ def wait(step: Step, ctx: ExecutionContext) -> Any:
     return ms
 
 
+def prompt_input(step: Step, ctx: ExecutionContext) -> Any:
+    """Prompt the user for input during execution.
+
+    Parameters
+    ----------
+    message: str
+        Message shown to the user.
+    default: Any, optional
+        Default value if the user provides empty input.
+    """
+    message = step.params.get("message", "")
+    default = step.params.get("default")
+    prompt = f"{message} " if message else ""
+    if default is not None:
+        prompt += f"[{default}] "
+    value = input(prompt)
+    if value == "" and default is not None:
+        value = default
+    return value
+
+
 def _stub_action(step: Step, ctx: ExecutionContext) -> Any:
     """Placeholder for unimplemented UI actions."""
     print(f"{step.action} not implemented")
@@ -47,6 +68,7 @@ BUILTIN_ACTIONS = {
     "log": log,
     "set": set_var,
     "wait": wait,
+    "prompt.input": prompt_input,
 }
 
 _UI_ACTIONS = [
