@@ -49,3 +49,38 @@ def test_resume_from_failed_step(tmp_path):
     assert not any("\"stepId\": \"s1\"" in line for line in log)
     assert any("\"stepId\": \"s2\"" in line for line in log)
     assert any("\"stepId\": \"s3\"" in line for line in log)
+
+
+def test_auto_resume(tmp_path):
+    flow_dict = {
+        "version": "1.0",
+        "meta": {"name": "test"},
+        "defaults": {"envProfile": "vdi"},
+        "steps": [
+            {"id": "s1", "action": "set", "params": {"name": "x", "value": 1}},
+            {"id": "s2", "action": "fail_once"},
+            {"id": "s3", "action": "set", "params": {"name": "result", "value": "vars['x']"}},
+        ],
+    }
+    flow = Flow.from_dict(flow_dict)
+
+    state = {"fail": True}
+
+    def fail_once(step, ctx):
+        if state["fail"]:
+            state["fail"] = False
+            raise ValueError("boom")
+        return "ok"
+
+    runner = Runner(run_id="auto", base_dir=tmp_path)
+    for name, func in BUILTIN_ACTIONS.items():
+        runner.register_action(name, func)
+    runner.register_action("fail_once", fail_once)
+
+    vars_after = runner.run_flow(flow, {}, auto_resume=True)
+    assert vars_after["result"] == 1
+
+    log = (runner.run_dir / "log.jsonl").read_text().splitlines()
+    assert sum("\"stepId\": \"s1\"" in line for line in log) == 1
+    assert sum("\"stepId\": \"s2\"" in line for line in log) == 2
+    assert sum("\"stepId\": \"s3\"" in line for line in log) == 1
