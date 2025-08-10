@@ -4,6 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from queue import Queue
 from typing import Any, Callable, Dict, List, Tuple
+import re
+import time
+
 
 from .selector import analyze_selectors, normalize_selector
 
@@ -17,15 +20,52 @@ except Exception:  # pragma: no cover - headless environments
 _ANCHOR_REGISTRY: List[str] = []
 
 
-def highlight_screen(selector: str) -> None:
+def highlight_screen(selector: str, duration: float = 0.5) -> None:
     """Highlight ``selector`` on screen.
 
-    The real implementation would draw an overlay.  In tests this function can
-    be monkeypatched to assert that highlighting was requested.
+    When Qt is available and ``selector`` represents coordinates in the form
+    ``"@x,y"`` a small red rectangle is shown around that point for
+    ``duration`` seconds.  In headless environments the function quietly does
+    nothing so tests can monkeypatch it freely.
     """
 
-    # default implementation is a no-op; kept for test monkeypatching
-    return None
+    if QCursor is None:
+        return
+    m = re.match(r"@(?P<x>\d+),(?P<y>\d+)", selector)
+    if not m:
+        return
+    try:  # pragma: no cover - optional GUI dependency
+        from PyQt6.QtWidgets import QApplication, QWidget
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QPainter, QPen
+
+        app = QApplication.instance() or QApplication([])
+
+        class Overlay(QWidget):
+            def paintEvent(self, event):  # type: ignore[override]
+                painter = QPainter(self)
+                pen = QPen(Qt.GlobalColor.red)
+                pen.setWidth(2)
+                painter.setPen(pen)
+                painter.drawRect(0, 0, self.width() - 1, self.height() - 1)
+
+        size = 20
+        x, y = int(m.group("x")), int(m.group("y"))
+        w = Overlay()
+        w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        w.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        w.setGeometry(x - size // 2, y - size // 2, size, size)
+        w.show()
+        app.processEvents()
+        time.sleep(duration)
+        w.close()
+        app.processEvents()
+    except Exception:
+        return
 
 
 def register_anchor(selector: str) -> None:
@@ -247,6 +287,48 @@ def capture_coordinates(
     return result
 
 
+def countdown_capture_coordinates(seconds: int = 10) -> Dict[str, Any]:
+    """Return cursor coordinates after a simple countdown.
+
+    The function sleeps for ``seconds`` allowing the user to position the
+    cursor and then delegates to :func:`capture_coordinates`.  ``time.sleep``
+    is used for the countdown which may be monkeypatched in tests to avoid
+    delays.  When Qt is available the remaining time is shown in a temporary
+    window so the user receives visual feedback.
+    """
+    if QCursor is not None:
+        try:  # pragma: no cover - optional GUI dependency
+            from PyQt6.QtWidgets import QApplication, QLabel
+            from PyQt6.QtCore import Qt
+
+            app = QApplication.instance() or QApplication([])
+            label = QLabel()
+            label.setWindowFlags(
+                Qt.WindowType.FramelessWindowHint
+                | Qt.WindowType.WindowStaysOnTopHint
+                | Qt.WindowType.Tool
+            )
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            label.setStyleSheet(
+                "color: red; font-size: 48px; background: transparent"
+            )
+            label.resize(100, 60)
+            label.show()
+            for remaining in range(seconds, 0, -1):
+                label.setText(str(remaining))
+                app.processEvents()
+                time.sleep(1)
+            label.close()
+            app.processEvents()
+        except Exception:
+            for _ in range(seconds, 0, -1):
+                time.sleep(1)
+    else:
+        for _ in range(seconds, 0, -1):
+            time.sleep(1)
+    return capture_coordinates()
+
+
 def spy_on_click() -> ElementInfo:
     """Wait for a user click and return an :class:`ElementInfo` for it.
 
@@ -259,6 +341,47 @@ def spy_on_click() -> ElementInfo:
     return element_spy(selector, x=coords["x"], y=coords["y"])
 
 
+
+
+def desktop_spy() -> ElementInfo:
+    """Convenience wrapper emulating a desktop element spy.
+
+    It simply forwards to :func:`spy_on_click` which waits for the user to
+    click and returns information about the element at that position.
+    """
+    return spy_on_click()
+
+
+def capture_web_click(url: str) -> Dict[str, Any]:
+    """Open ``url`` and return the bounding box of the first element clicked.
+
+    A minimal helper that uses Playwright to load the page.  When the user
+    clicks an element it is outlined in red and the element's bounding box is
+    returned.  If Playwright is unavailable the function returns an empty
+    dictionary.
+    """
+    try:  # pragma: no cover - Playwright optional in tests
+        from playwright.sync_api import sync_playwright
+    except Exception:
+        return {}
+    with sync_playwright() as pw:  # pragma: no cover - requires browser
+        browser = pw.chromium.launch()
+        page = browser.new_page()
+        page.goto(url)
+        box = page.evaluate(
+            """
+            () => new Promise(resolve => {
+                document.addEventListener('click', e => {
+                    e.preventDefault();
+                    const r = e.target.getBoundingClientRect();
+                    e.target.style.outline = '2px solid red';
+                    resolve({x: r.left, y: r.top, width: r.width, height: r.height});
+                }, {once: true});
+            })
+            """
+        )
+        browser.close()
+        return box
 def record_web(
     actions: List[Dict[str, Any]],
     flow: Dict[str, Any] | None = None,
