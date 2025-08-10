@@ -37,6 +37,8 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QHeaderView,
     QDialog,
+    QWizard,
+    QWizardPage,
     QPlainTextEdit,
 )
 from watchdog.events import FileSystemEventHandler
@@ -71,6 +73,39 @@ class FlowChangeHandler(FileSystemEventHandler, QObject):
     def on_created(self, event):
         if not event.is_directory:
             self._handle(event.src_path)
+
+# ---------- Onboarding Wizard ----------
+class OnboardingWizard(QWizard):
+    """Simple introductory wizard shown on first launch."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Getting Started")
+
+        # Page 1 - flow creation
+        page1 = QWizardPage()
+        page1.setTitle("Create a Flow")
+        l1 = QVBoxLayout()
+        label1 = QLabel(
+            "Use the action palette to build a flow by adding the required steps."
+        )
+        label1.setWordWrap(True)
+        l1.addWidget(label1)
+        page1.setLayout(l1)
+
+        # Page 2 - execution
+        page2 = QWizardPage()
+        page2.setTitle("Run the Flow")
+        l2 = QVBoxLayout()
+        label2 = QLabel(
+            "Press the Run button to execute your flow or Dry Run to test without side effects."
+        )
+        label2.setWordWrap(True)
+        l2.addWidget(label2)
+        page2.setLayout(l2)
+
+        self.addPage(page1)
+        self.addPage(page2)
 
 # ---------- 中央キャンバス（ドット背景＋カード） ----------
 class StepListWidget(QListWidget):
@@ -507,6 +542,26 @@ class MainWindow(QMainWindow):
         self.header.appr_btn.clicked.connect(self.request_approval)
         # Add steps with a single click from the action palette instead of requiring a double-click
         self.action_palette.list.itemClicked.connect(self.palette_clicked)
+
+        # Launch onboarding wizard on first run
+        self._config_path = Path.home() / ".config" / "rpa_project" / "config.json"
+        show_wizard = False
+        cfg = {}
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            if self._config_path.exists():
+                try:
+                    cfg = json.loads(self._config_path.read_text())
+                except Exception:
+                    cfg = {}
+            if not cfg.get("onboarding_complete"):
+                show_wizard = True
+                self._config = cfg
+        if show_wizard:
+            wizard = OnboardingWizard(self)
+            if wizard.exec():
+                cfg["onboarding_complete"] = True
+                self._config_path.parent.mkdir(parents=True, exist_ok=True)
+                self._config_path.write_text(json.dumps(cfg, indent=2))
 
     def save_flow(self) -> None:
         """Persist the current flow to ``self.current_flow_path``."""
