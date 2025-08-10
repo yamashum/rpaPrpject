@@ -2,19 +2,33 @@
 
 このリポジトリの開発環境を構築する手順を以下に記します。
 
-## 環境構築
+## 環境構築（初心者向け）
 
-1. **Python 3.12 以上**と **Node.js (npm)** をインストールします。
-2. Python の仮想環境を作成して有効化します。
+以下の手順で開発環境を準備できます。
+
+1. **必要なソフトをインストールする**
+   - [Python 3.12 以上](https://www.python.org/downloads/) をインストールします。インストール時に「Add python to PATH」にチェックを入れてください。
+   - [Node.js（npm 同梱）](https://nodejs.org/ja) の LTS 版をインストールします。
+   - ターミナル（またはコマンドプロンプト）で `python --version` と `node --version` を実行し、バージョンが表示されることを確認します。
+2. **プロジェクトのフォルダに移動する**
+   - 例: `cd rpaPrpject`
+3. **Python の仮想環境を作成して有効化する**
+   - Mac/Linux:
+     ```bash
+     python -m venv venv
+     source venv/bin/activate
+     ```
+   - Windows:
+     ```cmd
+     python -m venv venv
+     venv\\Scripts\\activate
+     ```
+4. **Python の依存パッケージをインストールする**
    ```bash
-   python -m venv venv
-   source venv/bin/activate
-   ```
-3. 必要な Python パッケージをインストールします。
-   ```bash
+   pip install -r requirements.txt
    pip install PyQt6
    ```
-4. Node.js の依存関係をインストールします。
+5. **Node.js の依存パッケージをインストールする**
    ```bash
    npm install
    ```
