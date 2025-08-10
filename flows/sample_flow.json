@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "meta": {"name": "demo", "desc": "Sample flow", "permissions": ["desktop.uia"]},
+  "inputs": {"n": 3},
+  "variables": {},
+  "defaults": {"timeoutMs": 1000, "retry": 0, "envProfile": "default"},
+  "steps": [
+    {"id": "s1", "action": "log", "params": {"message": "start"}},
+    {"id": "s2", "action": "set", "params": {"name": "total", "value": 0}},
+    {
+      "id": "s3",
+      "action": "for_each",
+      "for_each": "i",
+      "params": {"items": "range(vars['n'])"},
+      "steps": [
+        {"id": "s3_log", "action": "log", "params": {"message": "loop"}},
+        {"id": "s3_add", "action": "set", "params": {"name": "total", "value": "vars['total'] + i"}}
+      ]
+    },
+    {"id": "s4", "action": "if", "condition": "vars['total'] > 2", "steps": [
+        {"id": "s4_true", "action": "log", "params": {"message": "total>2"}}
+    ], "else": [
+        {"id": "s4_false", "action": "log", "params": {"message": "total<=2"}}
+    ]},
+    {"id": "s5", "action": "log", "params": {"message": "done"}}
+  ]
+}

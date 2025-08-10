@@ -1,6 +1,7 @@
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 import queue
 from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt6.QtGui import QFont, QPainter, QColor, QPen
@@ -8,10 +9,12 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
     QPushButton, QLabel, QListWidget, QListWidgetItem, QFrame, QScrollArea,
     QFormLayout, QLineEdit, QSpinBox, QCheckBox, QComboBox, QTableWidget,
-    QTableWidgetItem, QHeaderView
+    QTableWidgetItem, QHeaderView, QDialog, QPlainTextEdit
 )
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+
+from workflow.flow_git import commit_and_tag, history as flow_history, diff as flow_diff, mark_approved
 
 # Global queue receiving actions recorded by external modules
 recorded_actions_q: "queue.Queue[dict]" = queue.Queue()
@@ -177,8 +180,11 @@ class HeaderBar(QWidget):
         self.stop_btn = QPushButton("□  Stop"); self.stop_btn.setProperty("class","ghost")
         self.dry_btn  = QPushButton("◻  Dry Run"); self.dry_btn.setProperty("class","ghost")
         self.sett_btn = QPushButton("⚙  Setting"); self.sett_btn.setProperty("class","ghost")
+        self.hist_btn = QPushButton("History"); self.hist_btn.setProperty("class","ghost")
+        self.appr_btn = QPushButton("Request Approval"); self.appr_btn.setProperty("class","ghost")
         left = QHBoxLayout(); left.setSpacing(8)
         left.addWidget(self.run_btn); left.addWidget(self.stop_btn); left.addWidget(self.dry_btn); left.addWidget(self.sett_btn)
+        left.addWidget(self.hist_btn); left.addWidget(self.appr_btn)
         h.addLayout(left); h.addStretch(1)
         user = QLabel("🔍    👤"); user.setStyleSheet("color:#8AA0C6;")
         h.addWidget(user)
@@ -222,12 +228,63 @@ class LogPanel(QFrame):
         self.table.setItem(r, 2, st)
         self.table.setRowHeight(r, 26)
 
+# ---------- 履歴ダイアログ ----------
+class FlowHistoryDialog(QDialog):
+    def __init__(self, path: Path):
+        super().__init__()
+        self.path = path
+        self.setWindowTitle("Flow History")
+        layout = QVBoxLayout(self)
+        self.table = QTableWidget(0, 2)
+        self.table.setHorizontalHeaderLabels(["Commit", "Message"])
+        self.table.verticalHeader().setVisible(False)
+        layout.addWidget(self.table)
+        self.commits: list[str] = []
+        for commit, msg in flow_history(path, 20):
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            self.table.setItem(row, 0, QTableWidgetItem(commit[:7]))
+            self.table.setItem(row, 1, QTableWidgetItem(msg))
+            self.commits.append(commit)
+        self.diff_view = QPlainTextEdit()
+        self.diff_view.setReadOnly(True)
+        layout.addWidget(self.diff_view)
+        btns = QHBoxLayout()
+        diff_btn = QPushButton("Diff")
+        approve_btn = QPushButton("Approve")
+        diff_btn.clicked.connect(self._show_diff)
+        approve_btn.clicked.connect(self._approve)
+        btns.addWidget(diff_btn)
+        btns.addWidget(approve_btn)
+        layout.addLayout(btns)
+
+    def _selected_commit(self) -> str | None:
+        row = self.table.currentRow()
+        if row < 0:
+            return None
+        return self.commits[row]
+
+    def _show_diff(self) -> None:
+        commit = self._selected_commit()
+        if not commit:
+            return
+        text = flow_diff(self.path, f"{commit}^", commit)
+        self.diff_view.setPlainText(text)
+
+    def _approve(self) -> None:
+        commit = self._selected_commit()
+        if not commit:
+            return
+        mark_approved(commit)
+        self.accept()
+
 # ---------- メイン ----------
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("RPA Designer Mock")
         self.resize(1280, 860)
+        self.current_flow_path = Path("flows/sample_flow.json")
 
         root = QWidget(); self.setCentralWidget(root)
         root_v = QVBoxLayout(root); root_v.setContentsMargins(0,0,0,0); root_v.setSpacing(0)
@@ -271,6 +328,7 @@ class MainWindow(QMainWindow):
         self._observer = Observer()
         self._observer.schedule(self._flow_handler, ".", recursive=False)
         self._observer.schedule(self._flow_handler, "workflow", recursive=True)
+        self._observer.schedule(self._flow_handler, "flows", recursive=True)
         self._observer.start()
 
         # expose the global queue for convenience
@@ -286,6 +344,8 @@ class MainWindow(QMainWindow):
         self.header.stop_btn.clicked.connect(self.on_stop)
         self.header.dry_btn.clicked.connect(self.on_dry)
         self.header.sett_btn.clicked.connect(self.on_setting)
+        self.header.hist_btn.clicked.connect(self.show_history)
+        self.header.appr_btn.clicked.connect(self.request_approval)
         self.action_palette.list.itemDoubleClicked.connect(self.palette_double_clicked)
 
     def record_callback(self, action: dict) -> None:
@@ -329,11 +389,25 @@ class MainWindow(QMainWindow):
     def on_setting(self):
         self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Setting", "Opened", True)
 
+    def show_history(self):
+        dlg = FlowHistoryDialog(self.current_flow_path)
+        dlg.exec()
+
+    def request_approval(self):
+        self.show_history()
+
     def on_flow_updated(self, path: str):
         """Refresh UI when the watched flow definition changes."""
         self.log_panel.add_row(
             datetime.now().strftime("%H:%M:%S"), "Watcher", f"{path} changed", True
         )
+        p = Path(path)
+        if p.is_relative_to(Path("flows")):
+            tag = f"{p.stem}/{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            commit = commit_and_tag(p, f"update {p.name}", tag)
+            self.log_panel.add_row(
+                datetime.now().strftime("%H:%M:%S"), "Git", f"{commit[:7]} tagged {tag}", True
+            )
 
     def closeEvent(self, event):  # type: ignore[override]
         if hasattr(self, "_observer"):
