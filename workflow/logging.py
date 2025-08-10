@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, Callable
 import re
+
+
+# Callback invoked with the log record after each step is logged.
+_step_callback: Callable[[Dict[str, Any]], None] | None = None
 
 
 def log_step(
@@ -103,6 +107,8 @@ def log_step(
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record) + "\n")
+    if _step_callback is not None:
+        _step_callback(dict(record))
 
 
 PII_PATTERNS = [
@@ -119,4 +125,14 @@ def mask_pii(value: str) -> str:
     return masked
 
 
-__all__ = ["log_step", "mask_pii"]
+def set_step_log_callback(callback: Callable[[Dict[str, Any]], None] | None) -> None:
+    """Register a callback invoked for each step log.
+
+    Passing ``None`` disables callbacks.
+    """
+
+    global _step_callback
+    _step_callback = callback
+
+
+__all__ = ["log_step", "mask_pii", "set_step_log_callback"]
