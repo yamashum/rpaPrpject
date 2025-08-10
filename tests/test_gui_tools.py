@@ -95,3 +95,22 @@ def test_spy_on_click(monkeypatch):
     info = gui_tools.spy_on_click()
     assert captured[0] == ("@1,2", 1, 2)
     assert info.x == 1 and info.y == 2
+
+def test_countdown_capture_coordinates(monkeypatch):
+    called = {}
+
+    def fake_capture():
+        called["done"] = True
+        return {"x": 5, "y": 6}
+
+    sleeps: list[int] = []
+    def fake_sleep(sec: int) -> None:
+        sleeps.append(sec)
+
+    monkeypatch.setattr(gui_tools, "capture_coordinates", fake_capture)
+    monkeypatch.setattr(gui_tools.time, "sleep", fake_sleep)
+
+    res = gui_tools.countdown_capture_coordinates(seconds=3)
+    assert called["done"]
+    assert res["x"] == 5 and res["y"] == 6
+    assert sleeps == [1, 1, 1]

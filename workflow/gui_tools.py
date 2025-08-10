@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from queue import Queue
 from typing import Any, Callable, Dict, List, Tuple
+import time
+
 
 from .selector import analyze_selectors, normalize_selector
 
@@ -247,6 +249,19 @@ def capture_coordinates(
     return result
 
 
+def countdown_capture_coordinates(seconds: int = 10) -> Dict[str, Any]:
+    """Return cursor coordinates after a simple countdown.
+
+    The function sleeps for ``seconds`` allowing the user to position the
+    cursor and then delegates to :func:`capture_coordinates`.  ``time.sleep``
+    is used for the countdown which may be monkeypatched in tests to avoid
+    delays.
+    """
+    for _ in range(seconds, 0, -1):
+        time.sleep(1)
+    return capture_coordinates()
+
+
 def spy_on_click() -> ElementInfo:
     """Wait for a user click and return an :class:`ElementInfo` for it.
 
@@ -259,6 +274,47 @@ def spy_on_click() -> ElementInfo:
     return element_spy(selector, x=coords["x"], y=coords["y"])
 
 
+
+
+def desktop_spy() -> ElementInfo:
+    """Convenience wrapper emulating a desktop element spy.
+
+    It simply forwards to :func:`spy_on_click` which waits for the user to
+    click and returns information about the element at that position.
+    """
+    return spy_on_click()
+
+
+def capture_web_click(url: str) -> Dict[str, Any]:
+    """Open ``url`` and return the bounding box of the first element clicked.
+
+    A minimal helper that uses Playwright to load the page.  When the user
+    clicks an element it is outlined in red and the element's bounding box is
+    returned.  If Playwright is unavailable the function returns an empty
+    dictionary.
+    """
+    try:  # pragma: no cover - Playwright optional in tests
+        from playwright.sync_api import sync_playwright
+    except Exception:
+        return {}
+    with sync_playwright() as pw:  # pragma: no cover - requires browser
+        browser = pw.chromium.launch()
+        page = browser.new_page()
+        page.goto(url)
+        box = page.evaluate(
+            """
+            () => new Promise(resolve => {
+                document.addEventListener('click', e => {
+                    e.preventDefault();
+                    const r = e.target.getBoundingClientRect();
+                    e.target.style.outline = '2px solid red';
+                    resolve({x: r.left, y: r.top, width: r.width, height: r.height});
+                }, {once: true});
+            })
+            """
+        )
+        browser.close()
+        return box
 def record_web(
     actions: List[Dict[str, Any]],
     flow: Dict[str, Any] | None = None,
