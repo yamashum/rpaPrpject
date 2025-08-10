@@ -18,6 +18,7 @@ from watchdog.observers import Observer
 from workflow.flow_git import commit_and_tag, history as flow_history, diff as flow_diff, mark_approved
 from workflow.flow import Flow
 from workflow.runner import Runner
+from workflow.logging import set_step_log_callback
 
 # Global queue receiving actions recorded by external modules
 recorded_actions_q: "queue.Queue[dict]" = queue.Queue()
@@ -231,6 +232,24 @@ class LogPanel(QFrame):
         self.table.setItem(r, 2, st)
         self.table.setRowHeight(r, 26)
 
+# Bridge log_step callbacks into the UI thread
+class _StepLogBridge(QObject):
+    """Routes step log records to the :class:`LogPanel` on the GUI thread."""
+
+    step_logged = pyqtSignal(dict)
+
+    def __init__(self, panel: LogPanel) -> None:
+        super().__init__()
+        self._panel = panel
+        self.step_logged.connect(self._handle)
+
+    def _handle(self, record: dict) -> None:
+        t = datetime.now().strftime("%H:%M:%S")
+        step = f"{record.get('stepId')} {record.get('action')}"
+        status = record.get("result", "")
+        ok = status in {"ok", "skipped"}
+        self._panel.add_row(t, step, status, ok=ok)
+
 # ---------- 履歴ダイアログ ----------
 class FlowHistoryDialog(QDialog):
     def __init__(self, path: Path):
@@ -322,6 +341,8 @@ class MainWindow(QMainWindow):
 
         self.log_panel = LogPanel()
         vsplit.addWidget(self.log_panel)
+        self._step_log_bridge = _StepLogBridge(self.log_panel)
+        set_step_log_callback(self._step_log_bridge.step_logged.emit)
         vsplit.setCollapsible(0, False)
         vsplit.setCollapsible(1, False)
         vsplit.setSizes([640, 180])  # 上:中央エリア / 下:ログ（固定気味）
