@@ -3,6 +3,7 @@
 from .flow import Flow, Step
 from .runner import Runner
 from .scheduler import CronScheduler, capture_crash
+from .orchestrator import Orchestrator, orchestrator
 from .overlay import ControlOverlay
 from .actions_access import ACCESS_ACTIONS
 from .actions_http import HTTP_ACTIONS
@@ -15,6 +16,8 @@ __all__ = [
     "Runner",
     "CronScheduler",
     "capture_crash",
+    "Orchestrator",
+    "orchestrator",
     "ControlOverlay",
     "ACCESS_ACTIONS",
     "HTTP_ACTIONS",
