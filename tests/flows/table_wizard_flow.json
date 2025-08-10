@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "meta": {"name": "table-wizard", "permissions": ["desktop.uia"]},
+  "steps": [
+    {
+      "id": "find",
+      "action": "table.wizard",
+      "selector": {"mock": {}},
+      "params": {"query": "name=Alice", "select": true},
+      "out": "found"
+    }
+  ]
+}

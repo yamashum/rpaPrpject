@@ -145,6 +145,52 @@ def test_find_table_row(monkeypatch):
     assert row["dept"] == "IT"
 
 
+def test_table_wizard(monkeypatch):
+    class Row(dict):
+        def __init__(self, data):
+            super().__init__(data)
+            self.selected = False
+
+        def select(self):
+            self.selected = True
+
+    class Table:
+        headers = ["id", "name", "dept"]
+
+        def __init__(self):
+            self.rows = [
+                Row({"id": "1", "name": "Bob", "dept": "IT"}),
+                Row({"id": "2", "name": "Alice", "dept": "HR"}),
+            ]
+
+    table = Table()
+    monkeypatch.setattr(actions, "resolve_selector", lambda s: {"strategy": "mock", "target": table})
+    ctx = build_ctx()
+
+    row = actions.table_wizard(
+        Step(id="w1", action="table.wizard", selector={"mock": {}}, params={"query": "name=Bob"}),
+        ctx,
+    )
+    assert row["id"] == "1"
+
+    row = actions.table_wizard(
+        Step(id="w2", action="table.wizard", selector={"mock": {}}, params={"query": "1=Alice"}),
+        ctx,
+    )
+    assert row["name"] == "Alice"
+
+    row = actions.table_wizard(
+        Step(
+            id="w3",
+            action="table.wizard",
+            selector={"mock": {}},
+            params={"query": "dept=IT", "select": True},
+        ),
+        ctx,
+    )
+    assert row.selected
+
+
 def test_cell_get_set_from_row():
     ctx = build_ctx()
     row = {"id": "1", "name": "Bob"}
