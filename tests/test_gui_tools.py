@@ -77,3 +77,21 @@ def test_record_web_insert_callback_and_queue():
     assert calls[0]["selector"].startswith("[data-testid=")
     queued = q.get_nowait()
     assert queued["selector"] == calls[0]["selector"]
+
+
+def test_spy_on_click(monkeypatch):
+    monkeypatch.setattr(
+        gui_tools, "capture_coordinates", lambda wait=True: {"x": 1, "y": 2, "basis": "Screen", "dpi": 96}
+    )
+
+    captured: list[tuple[str, int, int]] = []
+
+    def fake_spy(selector: str, text: str | None = None, *, x: int | None = None, y: int | None = None):
+        captured.append((selector, x or 0, y or 0))
+        return gui_tools.ElementInfo(selector=selector, x=x, y=y)
+
+    monkeypatch.setattr(gui_tools, "element_spy", fake_spy)
+
+    info = gui_tools.spy_on_click()
+    assert captured[0] == ("@1,2", 1, 2)
+    assert info.x == 1 and info.y == 2

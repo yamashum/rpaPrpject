@@ -97,7 +97,13 @@ class ElementInfo:
     y: int | None = None
 
 
-def element_spy(selector: str, text: str | None = None) -> ElementInfo:
+def element_spy(
+    selector: str,
+    text: str | None = None,
+    *,
+    x: int | None = None,
+    y: int | None = None,
+) -> ElementInfo:
     """Simulate an element spy utility collecting basic UIA data.
 
     In addition to recording the selector, the function highlights the element
@@ -135,6 +141,8 @@ def element_spy(selector: str, text: str | None = None) -> ElementInfo:
         control_type=control_type,
         class_name=class_name,
         hierarchy=hierarchy,
+        x=x,
+        y=y,
     )
 
 
@@ -174,8 +182,9 @@ def capture_coordinates(
     basis: str = "Screen",
     origin: Tuple[int, int] | None = None,
     preview: bool = False,
+    wait: bool = False,
 ) -> Dict[str, Any]:
-    """Return the current mouse coordinates with optional basis.
+    """Return the mouse coordinates with optional basis.
 
     Parameters
     ----------
@@ -189,10 +198,39 @@ def capture_coordinates(
         When ``True`` include a copy of the computed coordinates under the
         ``"preview"`` key.  This is primarily useful for GUI tooling that wants
         to display the result without performing an action.
+    wait:
+        When ``True`` the function waits for the user to click before
+        obtaining the coordinates.  This requires a running Qt event loop.
     """
 
     if QCursor is None:  # pragma: no cover - exercised in headless tests
         x, y = 0, 0
+    elif wait:  # pragma: no cover - optional GUI dependency
+        try:
+            from PyQt6.QtWidgets import QApplication
+            from PyQt6.QtCore import QObject, QEvent, QEventLoop
+
+            app = QApplication.instance() or QApplication([])
+            clicked: Dict[str, int] = {}
+
+            class Listener(QObject):
+                def eventFilter(self, obj, event):  # type: ignore[override]
+                    if event.type() == QEvent.Type.MouseButtonPress:
+                        gp = event.globalPosition()
+                        clicked["x"], clicked["y"] = int(gp.x()), int(gp.y())
+                        loop.quit()
+                    return False
+
+            listener = Listener()
+            app.installEventFilter(listener)
+            loop = QEventLoop()
+            loop.exec()
+            app.removeEventFilter(listener)
+            x = clicked.get("x", 0)
+            y = clicked.get("y", 0)
+        except Exception:
+            pos = QCursor.pos()
+            x, y = pos.x(), pos.y()
     else:  # pragma: no cover - optional GUI dependency
         pos = QCursor.pos()
         x, y = pos.x(), pos.y()
@@ -207,6 +245,18 @@ def capture_coordinates(
     if preview:
         result["preview"] = _grab_preview(x, y)
     return result
+
+
+def spy_on_click() -> ElementInfo:
+    """Wait for a user click and return an :class:`ElementInfo` for it.
+
+    The click coordinates are captured via :func:`capture_coordinates` and fed
+    back into :func:`element_spy` using an ``@x,y`` selector.
+    """
+
+    coords = capture_coordinates(wait=True)
+    selector = f"@{coords['x']},{coords['y']}"
+    return element_spy(selector, x=coords["x"], y=coords["y"])
 
 
 def record_web(
