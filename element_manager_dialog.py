@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QWidget,
     QLabel,
+    QTabWidget,
 )
 from workflow.gui_tools import ElementInfo, capture_coordinates, element_spy, spy_on_click
 from workflow import element_store
@@ -19,8 +20,12 @@ TEXT = {
     "title": "要素取得・管理",
     "desc": "セレクタを指定して要素情報を取得し、一覧で管理します。",
     "selector_placeholder": "#main > div",
-    "spy": "取得",
+    "spy_desktop": "デスクトップ取得",
+    "spy_web": "WEB取得",
     "coord": "座標取得",
+    "tab_desktop": "デスクトップ",
+    "tab_web": "WEB",
+    "tab_coord": "座標",
     "remove": "削除",
     "close": "閉じる",
     "column_selector": "セレクタ",
@@ -47,25 +52,34 @@ class ElementManagerDialog(QDialog):
         self.selector_edit = QLineEdit()
         self.selector_edit.setPlaceholderText(TEXT["selector_placeholder"])
         form.addWidget(self.selector_edit)
-        self.spy_btn = QPushButton(TEXT["spy"])
+        self.spy_btn = QPushButton(TEXT["spy_desktop"])
         form.addWidget(self.spy_btn)
+        self.web_btn = QPushButton(TEXT["spy_web"])
+        form.addWidget(self.web_btn)
         self.coord_btn = QPushButton(TEXT["coord"])
         form.addWidget(self.coord_btn)
         layout.addLayout(form)
 
-        self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels(
-            [
-                TEXT["column_selector"],
-                TEXT["column_name"],
-                TEXT["column_auto"],
-                TEXT["column_type"],
-                TEXT["column_class"],
-                TEXT["column_x"],
-                TEXT["column_y"],
-            ]
-        )
-        layout.addWidget(self.table)
+        self.tabs = QTabWidget()
+        self.desktop_table = QTableWidget(0, 7)
+        self.web_table = QTableWidget(0, 7)
+        self.coord_table = QTableWidget(0, 7)
+        for table in (self.desktop_table, self.web_table, self.coord_table):
+            table.setHorizontalHeaderLabels(
+                [
+                    TEXT["column_selector"],
+                    TEXT["column_name"],
+                    TEXT["column_auto"],
+                    TEXT["column_type"],
+                    TEXT["column_class"],
+                    TEXT["column_x"],
+                    TEXT["column_y"],
+                ]
+            )
+        self.tabs.addTab(self.desktop_table, TEXT["tab_desktop"])
+        self.tabs.addTab(self.web_table, TEXT["tab_web"])
+        self.tabs.addTab(self.coord_table, TEXT["tab_coord"])
+        layout.addWidget(self.tabs)
 
         btns = QHBoxLayout()
         self.remove_btn = QPushButton(TEXT["remove"])
@@ -75,6 +89,7 @@ class ElementManagerDialog(QDialog):
         layout.addLayout(btns)
 
         self.spy_btn.clicked.connect(self._on_spy)
+        self.web_btn.clicked.connect(self._on_web_spy)
         self.coord_btn.clicked.connect(self._on_coord)
         self.remove_btn.clicked.connect(self._remove_selected)
         self.close_btn.clicked.connect(self.accept)
@@ -86,7 +101,16 @@ class ElementManagerDialog(QDialog):
             self.selector_edit.clear()
         else:
             info = spy_on_click()
-        self._add_info(info)
+        self._add_info(info, self.desktop_table)
+
+    def _on_web_spy(self) -> None:
+        selector = self.selector_edit.text().strip()
+        if selector:
+            info = element_spy(selector)
+            self.selector_edit.clear()
+        else:
+            info = spy_on_click()
+        self._add_info(info, self.web_table)
 
     def _on_coord(self) -> None:
         coords = capture_coordinates(wait=True)
@@ -96,26 +120,37 @@ class ElementManagerDialog(QDialog):
             x=coords["x"],
             y=coords["y"],
         )
-        self._add_info(info)
+        self._add_info(info, self.coord_table)
 
-    def _add_info(self, info: ElementInfo) -> None:
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-        self.table.setItem(row, 0, QTableWidgetItem(info.selector))
-        self.table.setItem(row, 1, QTableWidgetItem(info.name or ""))
-        self.table.setItem(row, 2, QTableWidgetItem(info.automation_id or ""))
-        self.table.setItem(row, 3, QTableWidgetItem(info.control_type or ""))
-        self.table.setItem(row, 4, QTableWidgetItem(info.class_name or ""))
-        self.table.setItem(row, 5, QTableWidgetItem(str(info.x) if info.x is not None else ""))
-        self.table.setItem(row, 6, QTableWidgetItem(str(info.y) if info.y is not None else ""))
+    def _add_info(self, info: ElementInfo, table: QTableWidget) -> None:
+        row = table.rowCount()
+        table.insertRow(row)
+        table.setItem(row, 0, QTableWidgetItem(info.selector))
+        table.setItem(row, 1, QTableWidgetItem(info.name or ""))
+        table.setItem(row, 2, QTableWidgetItem(info.automation_id or ""))
+        table.setItem(row, 3, QTableWidgetItem(info.control_type or ""))
+        table.setItem(row, 4, QTableWidgetItem(info.class_name or ""))
+        table.setItem(
+            row,
+            5,
+            QTableWidgetItem(str(info.x) if info.x is not None else ""),
+        )
+        table.setItem(
+            row,
+            6,
+            QTableWidgetItem(str(info.y) if info.y is not None else ""),
+        )
         element_store.add_element(info)
 
     def _remove_selected(self) -> None:
-        rows = sorted({idx.row() for idx in self.table.selectedIndexes()}, reverse=True)
+        table = self.tabs.currentWidget()
+        if not isinstance(table, QTableWidget):
+            return
+        rows = sorted({idx.row() for idx in table.selectedIndexes()}, reverse=True)
         for row in rows:
-            selector = self.table.item(row, 0).text()
+            selector = table.item(row, 0).text()
             for info in element_store.list_elements():
                 if info.selector == selector:
                     element_store.remove_element(info)
                     break
-            self.table.removeRow(row)
+            table.removeRow(row)
