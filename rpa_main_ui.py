@@ -58,6 +58,52 @@ from selector_editor_dialog import SelectorEditorDialog
 recorded_actions_q: "queue.Queue[dict]" = queue.Queue()
 
 
+TEXT = {
+    "wizard_title": "はじめに",
+    "wizard_create_flow": "フローを作成",
+    "wizard_create_flow_desc": "アクションパレットを使って必要なステップを追加し、フローを構築します。",
+    "wizard_run_flow": "フローを実行",
+    "wizard_run_flow_desc": "「実行」ボタンでフローを実行し、「ドライラン」で副作用なくテストできます。",
+    "action_palette": "アクションパレット",
+    "properties": "プロパティ",
+    "param_message": "メッセージ",
+    "param_variable": "変数",
+    "param_value": "値",
+    "param_milliseconds": "ミリ秒",
+    "param_default": "既定値",
+    "param_mask": "入力を隠す",
+    "param_options": "選択肢",
+    "label_action": "アクション",
+    "label_selector_editor": "セレクタ編集",
+    "label_output_variable": "出力変数",
+    "label_timeout": "タイムアウト",
+    "label_retry": "再試行回数",
+    "label_on_failure": "失敗時",
+    "checkbox_save_screenshot": "スクリーンショットを保存",
+    "tooltip_run": "現在のワークフローを実行します",
+    "tooltip_stop": "実行中のワークフローを停止します",
+    "tooltip_dry": "副作用なしでワークフローを実行します",
+    "tooltip_settings": "設定を開きます",
+    "tooltip_history": "実行履歴を表示します",
+    "tooltip_approval": "このフローの承認を依頼します",
+    "log_header_time": "時刻",
+    "log_header_step": "ステップ",
+    "log_header_status": "状態",
+    "history_title": "フロー履歴",
+    "history_commit": "コミット",
+    "history_message": "メッセージ",
+    "approval_request": "承認依頼",
+    "approval_failed": "失敗: {exc}",
+    "approval_sent": "送信しました",
+    "main_title": "RPAデザイナーモック",
+    "action_click": "クリック",
+    "action_input": "入力",
+    "action_write_excel": "Excelに書き込み",
+    "action_web_navigate": "Web - 移動",
+    "action_new_step": "新しいステップ",
+}
+
+
 class FlowChangeHandler(FileSystemEventHandler, QObject):
     """Bridge watchdog events to Qt signals."""
 
@@ -81,30 +127,26 @@ class FlowChangeHandler(FileSystemEventHandler, QObject):
 
 # ---------- Onboarding Wizard ----------
 class OnboardingWizard(QWizard):
-    """Simple introductory wizard shown on first launch."""
+    """初回起動時に表示される簡単な導入ウィザード。"""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Getting Started")
+        self.setWindowTitle(TEXT["wizard_title"])
 
         # Page 1 - flow creation
         page1 = QWizardPage()
-        page1.setTitle("Create a Flow")
+        page1.setTitle(TEXT["wizard_create_flow"])
         l1 = QVBoxLayout()
-        label1 = QLabel(
-            "Use the action palette to build a flow by adding the required steps."
-        )
+        label1 = QLabel(TEXT["wizard_create_flow_desc"])
         label1.setWordWrap(True)
         l1.addWidget(label1)
         page1.setLayout(l1)
 
         # Page 2 - execution
         page2 = QWizardPage()
-        page2.setTitle("Run the Flow")
+        page2.setTitle(TEXT["wizard_run_flow"])
         l2 = QVBoxLayout()
-        label2 = QLabel(
-            "Press the Run button to execute your flow or Dry Run to test without side effects."
-        )
+        label2 = QLabel(TEXT["wizard_run_flow_desc"])
         label2.setWordWrap(True)
         l2.addWidget(label2)
         page2.setLayout(l2)
@@ -276,7 +318,7 @@ class ActionPalette(QWidget):
             QListWidget::item:selected{ background:#EEF3FF; color:#1F2A44; border-radius:6px; }
         """)
         v = QVBoxLayout(self); v.setContentsMargins(16,16,16,16); v.setSpacing(10)
-        title = QLabel("Action Palette"); title.setObjectName("title")
+        title = QLabel(TEXT["action_palette"]); title.setObjectName("title")
         self.list = _PaletteListWidget()
         v.addWidget(title); v.addWidget(self.list)
         self._adv_items: list[QListWidgetItem] = []
@@ -318,42 +360,42 @@ class PropertiesPanel(QWidget):
     ACTION_FORMS: dict[str, dict[str, object]] = {
         "log": {
             "selector": False,
-            "params": [("message", QLineEdit, "Message", {})],
+            "params": [("message", QLineEdit, TEXT["param_message"], {})],
         },
         "set": {
             "selector": False,
             "params": [
-                ("name", QLineEdit, "Variable", {}),
-                ("value", QLineEdit, "Value", {}),
+                ("name", QLineEdit, TEXT["param_variable"], {}),
+                ("value", QLineEdit, TEXT["param_value"], {}),
             ],
         },
         "wait": {
             "selector": False,
             "params": [
-                ("ms", QSpinBox, "Milliseconds", {"min": 0, "max": 120000, "suffix": " ms"}),
+                ("ms", QSpinBox, TEXT["param_milliseconds"], {"min": 0, "max": 120000, "suffix": " ms"}),
             ],
         },
         "prompt.input": {
             "selector": False,
             "params": [
-                ("message", QLineEdit, "Message", {}),
-                ("default", QLineEdit, "Default", {}),
-                ("mask", QCheckBox, "Mask Input", {}),
+                ("message", QLineEdit, TEXT["param_message"], {}),
+                ("default", QLineEdit, TEXT["param_default"], {}),
+                ("mask", QCheckBox, TEXT["param_mask"], {}),
             ],
         },
         "prompt.confirm": {
             "selector": False,
             "params": [
-                ("message", QLineEdit, "Message", {}),
-                ("default", QComboBox, "Default", {"items": ["True", "False", "None"]}),
+                ("message", QLineEdit, TEXT["param_message"], {}),
+                ("default", QComboBox, TEXT["param_default"], {"items": ["True", "False", "None"]}),
             ],
         },
         "prompt.select": {
             "selector": False,
             "params": [
-                ("message", QLineEdit, "Message", {}),
-                ("options", QLineEdit, "Options", {"list": True}),
-                ("default", QLineEdit, "Default", {}),
+                ("message", QLineEdit, TEXT["param_message"], {}),
+                ("options", QLineEdit, TEXT["param_options"], {"list": True}),
+                ("default", QLineEdit, TEXT["param_default"], {}),
             ],
         },
     }
@@ -371,14 +413,22 @@ class PropertiesPanel(QWidget):
         v = QVBoxLayout(self)
         v.setContentsMargins(20, 20, 20, 20)
         v.setSpacing(12)
-        head = QLabel("Properties")
+        head = QLabel(TEXT["properties"])
         head.setObjectName("header")
         v.addWidget(head)
         form = QFormLayout()
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(10)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.act = QComboBox()
-        self.act.addItems(["Click", "Input", "Write to Excel", "Web - Navigate"])
+        self.act.addItems(
+            [
+                TEXT["action_click"],
+                TEXT["action_input"],
+                TEXT["action_write_excel"],
+                TEXT["action_web_navigate"],
+            ]
+        )
         self.selector = QLineEdit("any01   UIA/image...")
         self.out = QLineEdit("result1")
         self.to = QSpinBox()
@@ -388,12 +438,12 @@ class PropertiesPanel(QWidget):
         self.re = QSpinBox()
         self.re.setRange(0, 20)
         self.re.setValue(3)
-        self.chk = QCheckBox("Save screenshot")
+        self.chk = QCheckBox(TEXT["checkbox_save_screenshot"])
         self.chk.setChecked(True)
-        form.addRow("Action", self.act)
+        form.addRow(TEXT["label_action"], self.act)
         self.selector_btn = QPushButton("開く…")
         self.selector_btn.clicked.connect(self._open_selector_editor)
-        form.addRow("Seekitor Editor", self.selector_btn)
+        form.addRow(TEXT["label_selector_editor"], self.selector_btn)
         form.addRow(self.selector)
         v.addLayout(form)
 
@@ -412,11 +462,12 @@ class PropertiesPanel(QWidget):
         adv_form = QFormLayout()
         adv_form.setHorizontalSpacing(12)
         adv_form.setVerticalSpacing(10)
-        adv_form.addRow("Output Variable", self.out)
-        adv_form.addRow("Timeout", self.to)
-        adv_form.addRow("Retry Count", self.re)
+        adv_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        adv_form.addRow(TEXT["label_output_variable"], self.out)
+        adv_form.addRow(TEXT["label_timeout"], self.to)
+        adv_form.addRow(TEXT["label_retry"], self.re)
         adv_v.addLayout(adv_form)
-        adv_v.addWidget(QLabel("On Failure"))
+        adv_v.addWidget(QLabel(TEXT["label_on_failure"]))
         adv_v.addWidget(self.chk)
         v.addWidget(self.advanced_group)
         v.addStretch(1)
@@ -598,12 +649,12 @@ class HeaderBar(QWidget):
         self.adv_chk = QCheckBox("詳細設定"); self.adv_chk.setProperty("class","ghost")
 
         # basic context help so first-time users understand the actions
-        self.run_btn.setToolTip("Execute the current workflow")
-        self.stop_btn.setToolTip("Stop the running workflow")
-        self.dry_btn.setToolTip("Run the workflow without side effects")
-        self.sett_btn.setToolTip("Open settings")
-        self.hist_btn.setToolTip("Show execution history")
-        self.appr_btn.setToolTip("Request approval for this flow")
+        self.run_btn.setToolTip(TEXT["tooltip_run"])
+        self.stop_btn.setToolTip(TEXT["tooltip_stop"])
+        self.dry_btn.setToolTip(TEXT["tooltip_dry"])
+        self.sett_btn.setToolTip(TEXT["tooltip_settings"])
+        self.hist_btn.setToolTip(TEXT["tooltip_history"])
+        self.appr_btn.setToolTip(TEXT["tooltip_approval"])
         left = QHBoxLayout(); left.setSpacing(8)
         left.addWidget(self.run_btn); left.addWidget(self.stop_btn); left.addWidget(self.dry_btn); left.addWidget(self.sett_btn)
         left.addWidget(self.hist_btn); left.addWidget(self.appr_btn); left.addWidget(self.adv_chk)
@@ -625,7 +676,11 @@ class LogPanel(QFrame):
         v = QVBoxLayout(self); v.setContentsMargins(12,8,12,8); v.setSpacing(6)
 
         self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Time", "Step", "Status"])
+        self.table.setHorizontalHeaderLabels([
+            TEXT["log_header_time"],
+            TEXT["log_header_step"],
+            TEXT["log_header_status"],
+        ])
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
@@ -677,10 +732,13 @@ class FlowHistoryDialog(QDialog):
     def __init__(self, path: Path):
         super().__init__()
         self.path = path
-        self.setWindowTitle("Flow History")
+        self.setWindowTitle(TEXT["history_title"])
         layout = QVBoxLayout(self)
         self.table = QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels(["Commit", "Message"])
+        self.table.setHorizontalHeaderLabels([
+            TEXT["history_commit"],
+            TEXT["history_message"],
+        ])
         self.table.verticalHeader().setVisible(False)
         layout.addWidget(self.table)
         self.commits: list[str] = []
@@ -728,7 +786,7 @@ class FlowHistoryDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("RPA Designer Mock")
+        self.setWindowTitle(TEXT["main_title"])
         self.resize(1280, 860)
         self.current_flow_path = Path("flows/sample_flow.json")
         self.runner: Runner | None = None
@@ -760,10 +818,10 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence.StandardKey.Redo, self, self.redo)
 
         # 初期カード配置
-        self.add_step(icon="🖱️", action="Click", record=False)
-        self.add_step(icon="🧾", action="Input", record=False)
-        self.add_step(icon="📊", action="Write to Excel", record=False)
-        self.add_step(icon="🌐", action="Web - navigate", record=False)
+        self.add_step(icon="🖱️", action=TEXT["action_click"], record=False)
+        self.add_step(icon="🧾", action=TEXT["action_input"], record=False)
+        self.add_step(icon="📊", action=TEXT["action_write_excel"], record=False)
+        self.add_step(icon="🌐", action=TEXT["action_web_navigate"], record=False)
         center_scroll.setWidget(self.canvas)
         self.prop_panel = PropertiesPanel()
         hsplit.addWidget(self.action_palette)
@@ -916,7 +974,7 @@ class MainWindow(QMainWindow):
         self._refresh_titles()
         self.save_flow()
 
-    def add_step(self, icon="🧩", action="New Step", index: int | None = None, record: bool = True):
+    def add_step(self, icon="🧩", action=TEXT["action_new_step"], index: int | None = None, record: bool = True):
         """Insert a new step card."""
         if record:
             self.record_history()
@@ -1088,11 +1146,29 @@ class MainWindow(QMainWindow):
             flow = Flow.from_dict(data)
             Runner().request_approval(flow)
         except Exception as exc:  # pragma: no cover - defensive
-            self.log_panel.add_row(now, "Approval", f"Failed: {exc}", False)
-            QMessageBox.critical(self, "Approval Request", f"Failed: {exc}")
+            self.log_panel.add_row(
+                now,
+                TEXT["approval_request"],
+                TEXT["approval_failed"].format(exc=exc),
+                False,
+            )
+            QMessageBox.critical(
+                self,
+                TEXT["approval_request"],
+                TEXT["approval_failed"].format(exc=exc),
+            )
         else:
-            self.log_panel.add_row(now, "Approval", "Request sent", True)
-            QMessageBox.information(self, "Approval Request", "Request sent")
+            self.log_panel.add_row(
+                now,
+                TEXT["approval_request"],
+                TEXT["approval_sent"],
+                True,
+            )
+            QMessageBox.information(
+                self,
+                TEXT["approval_request"],
+                TEXT["approval_sent"],
+            )
 
     def on_flow_updated(self, path: str):
         """Refresh UI when the watched flow definition changes."""
