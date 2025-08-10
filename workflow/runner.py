@@ -20,6 +20,7 @@ from .config import PROFILES, WAIT_PRESETS, get_profile_chain
 from .hooks import apply_screenshot_mask
 from . import scheduler
 from .flow_signature import verify_flow
+from .flow_git import is_approved
 
 # Supported high-level flow operations
 FLOW_OPERATIONS = {"view", "run", "edit", "publish", "approve"}
@@ -321,6 +322,8 @@ class Runner:
 
     # ----- public API -----
     def run_file(self, path: str, inputs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if not is_approved(Path(path)):
+            raise ValueError("flow not approved")
         if self.signature_key is not None:
             if not verify_flow(path, self.signature_key):
                 raise ValueError("invalid flow signature")
@@ -334,6 +337,8 @@ class Runner:
         inputs: Optional[Dict[str, Any]] = None,
         path: Path | str | None = None,
     ) -> Dict[str, Any]:
+        if path is not None and not is_approved(Path(path)):
+            raise ValueError("flow not approved")
         if self.signature_key is not None:
             if path is None or not verify_flow(path, self.signature_key):
                 raise ValueError("invalid flow signature")
