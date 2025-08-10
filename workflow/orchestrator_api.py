@@ -5,12 +5,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from .orchestrator import orchestrator, Job
 from .flow import Flow
 from .runner import Runner
+from .log_db import (
+    init_db,
+    get_success_rate,
+    get_average_duration,
+    get_failure_counts,
+    get_selector_success_rates,
+    get_stats_by_period,
+    get_stats_by_flow,
+)
 
 app = FastAPI(title="RPA Orchestrator")
 
@@ -67,6 +76,26 @@ def rerun_job(job_id: str) -> dict:
 @app.get("/state")
 def state() -> dict:
     return orchestrator.get_state()
+
+
+@app.get("/stats")
+def stats(format: str = "json"):
+    conn = init_db("runs.sqlite")
+    data = {
+        "success_rate": get_success_rate(conn),
+        "average_duration": get_average_duration(conn),
+        "failure_counts": get_failure_counts(conn),
+        "selector_success_rates": get_selector_success_rates(conn),
+        "by_day": get_stats_by_period(conn, "day"),
+        "by_week": get_stats_by_period(conn, "week"),
+        "by_month": get_stats_by_period(conn, "month"),
+        "by_flow": get_stats_by_flow(conn),
+    }
+    if format == "html":
+        return HTMLResponse(
+            content=f"<html><body><pre>{json.dumps(data, indent=2)}</pre></body></html>"
+        )
+    return JSONResponse(content=data)
 
 
 @app.get("/", response_class=HTMLResponse)

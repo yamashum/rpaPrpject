@@ -8,6 +8,8 @@ from workflow.log_db import (
     get_run_counts_by_period,
     get_selector_success_rates,
     get_success_rate,
+    get_stats_by_flow,
+    get_stats_by_period,
     init_db,
     log_run,
     log_selector_result,
@@ -67,3 +69,19 @@ def test_failure_counts_and_periods():
     assert week
     month = dict(get_run_counts_by_period(conn, 'month'))
     assert month['2024-01'] == 3
+
+
+def test_grouped_stats():
+    conn = init_db(':memory:')
+    base = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    t1 = base.timestamp()
+    t2 = (base.replace(day=2)).timestamp()
+    log_run(conn, '1', 'flow1', t1, t1 + 1, True, selector_hit_rate=1.0)
+    log_run(conn, '2', 'flow1', t1 + 10, t1 + 12, False, failure_reason='oops', selector_hit_rate=0.0)
+    log_run(conn, '3', 'flow2', t2, t2 + 2, True, selector_hit_rate=0.5)
+    by_flow = get_stats_by_flow(conn)
+    assert pytest.approx(by_flow['flow1']['success_rate']) == 0.5
+    assert by_flow['flow1']['failure_counts']['oops'] == 1
+    by_day = get_stats_by_period(conn, 'day')
+    assert pytest.approx(by_day['2024-01-01']['success_rate']) == 0.5
+    assert by_day['2024-01-02']['run_count'] == 1
