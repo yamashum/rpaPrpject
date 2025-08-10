@@ -383,7 +383,26 @@ class MainWindow(QMainWindow):
         self.add_step(action=item.text().strip())
 
     def on_run(self):
-        self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Run", "Started", True)
+        """Execute the current flow and log the result."""
+        self.log_panel.add_row(
+            datetime.now().strftime("%H:%M:%S"), "Run", "Started", True
+        )
+        try:
+            data = json.loads(self.current_flow_path.read_text())
+            flow = Flow.from_dict(data)
+            runner = Runner()
+            runner.run_flow(flow)
+        except Exception as exc:  # pragma: no cover - defensive
+            self.log_panel.add_row(
+                datetime.now().strftime("%H:%M:%S"),
+                "Run",
+                f"Failed: {exc}",
+                False,
+            )
+        else:
+            self.log_panel.add_row(
+                datetime.now().strftime("%H:%M:%S"), "Run", "Finished", True
+            )
 
     def on_stop(self):
         self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Run", "Stopped", False)
