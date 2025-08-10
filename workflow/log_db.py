@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Dict, Iterable, Tuple, Union
+from typing import Any, Dict, Iterable, Tuple, Union
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -169,3 +169,65 @@ def get_run_counts_by_period(
         f"SELECT {expr} AS p, COUNT(*) FROM runs GROUP BY p ORDER BY p"
     )
     return cur.fetchall()
+
+# ----- aggregated statistics helpers -----
+
+def _group_expr(period: str) -> str:
+    if period == "day":
+        return "date(start_time, 'unixepoch')"
+    if period == "week":
+        return "strftime('%Y-%W', start_time, 'unixepoch')"
+    if period == "month":
+        return "strftime('%Y-%m', start_time, 'unixepoch')"
+    raise ValueError("period must be 'day', 'week' or 'month'")
+
+
+def _grouped_stats(conn: sqlite3.Connection, expr: str) -> Dict[str, Dict[str, Any]]:
+    query = (
+        f"SELECT {expr} AS g, COUNT(*) AS cnt, AVG(success) AS success_rate, "
+        "AVG(duration) AS avg_duration, AVG(selector_hit_rate) AS selector_hit_rate "
+        "FROM runs GROUP BY g ORDER BY g"
+    )
+    cur = conn.execute(query)
+    stats: Dict[str, Dict[str, Any]] = {}
+    for grp, cnt, sr, dur, sel in cur.fetchall():
+        stats[grp] = {
+            "run_count": cnt,
+            "success_rate": sr or 0.0,
+            "avg_duration": dur or 0.0,
+            "selector_hit_rate": sel or 0.0,
+            "failure_counts": {},
+        }
+
+    fail_query = (
+        f"SELECT {expr} AS g, failure_reason, COUNT(*) FROM runs "
+        "WHERE success = 0 GROUP BY g, failure_reason"
+    )
+    cur = conn.execute(fail_query)
+    for grp, reason, cnt in cur.fetchall():
+        stats.setdefault(
+            grp,
+            {
+                "run_count": 0,
+                "success_rate": 0.0,
+                "avg_duration": 0.0,
+                "selector_hit_rate": 0.0,
+                "failure_counts": {},
+            },
+        )
+        stats[grp]["failure_counts"][reason or "unknown"] = cnt
+    return stats
+
+
+def get_stats_by_period(conn: sqlite3.Connection, period: str) -> Dict[str, Dict[str, Any]]:
+    """Return aggregated statistics grouped by period."""
+
+    expr = _group_expr(period)
+    return _grouped_stats(conn, expr)
+
+
+def get_stats_by_flow(conn: sqlite3.Connection) -> Dict[str, Dict[str, Any]]:
+    """Return aggregated statistics grouped by flow name."""
+
+    return _grouped_stats(conn, "flow_name")
+

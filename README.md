@@ -27,6 +27,22 @@
 python rpa_main_ui.py
 ```
 
+## ダッシュボード
+
+FastAPI ベースのオーケストレータ API を起動すると、ブラウザからジョブの状態や実行統計を確認できます。
+
+```bash
+uvicorn workflow.orchestrator_api:app --reload
+```
+
+起動後は [http://localhost:8000/](http://localhost:8000/) にアクセスするとジョブ一覧が表示されます。`/stats` エンドポイントでは以下の情報を確認できます。デフォルトは JSON 形式で、`?format=html` を付けると HTML でも表示できます。
+
+- 全体の成功率と平均実行時間
+- 失敗理由の集計
+- セレクタの成功率
+- 日/週/月ごとの集計
+- フロー別集計
+
 ## ロックファイル
 
 ワークフロー実行中は `runs/runner.lock` というファイルに排他ロックを取得し、
