@@ -85,3 +85,20 @@ s.add_job(
 
 条件関数が `False` を返した場合、そのジョブはスキップされます。
 
+## フロー操作のロール設定
+
+`Flow.meta.roles` に操作名をキーとしたロールを定義すると、フローごとに操作権限を設定できます。指定可能な操作には `view`・`edit`・`publish`・`approve` などがあり、対応する `Runner.view_flow()` や `Runner.edit_flow()` などのメソッド呼び出し時にチェックされます。
+
+```json
+{
+  "meta": {
+    "roles": {
+      "view": ["viewer"],
+      "edit": ["editor"],
+      "publish": ["publisher"],
+      "approve": ["approver"]
+    }
+  }
+}
+```
+

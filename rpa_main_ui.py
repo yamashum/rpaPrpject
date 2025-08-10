@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 from datetime import datetime
 from pathlib import Path
 import queue
@@ -15,6 +16,8 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from workflow.flow_git import commit_and_tag, history as flow_history, diff as flow_diff, mark_approved
+from workflow.flow import Flow
+from workflow.runner import Runner
 
 # Global queue receiving actions recorded by external modules
 recorded_actions_q: "queue.Queue[dict]" = queue.Queue()
@@ -275,6 +278,8 @@ class FlowHistoryDialog(QDialog):
         commit = self._selected_commit()
         if not commit:
             return
+        flow = Flow.from_dict(json.loads(self.path.read_text()))
+        Runner().approve_flow(flow)
         mark_approved(commit)
         self.accept()
 
@@ -390,6 +395,8 @@ class MainWindow(QMainWindow):
         self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Setting", "Opened", True)
 
     def show_history(self):
+        flow = Flow.from_dict(json.loads(self.current_flow_path.read_text()))
+        Runner().view_flow(flow)
         dlg = FlowHistoryDialog(self.current_flow_path)
         dlg.exec()
 
@@ -403,6 +410,11 @@ class MainWindow(QMainWindow):
         )
         p = Path(path)
         if p.is_relative_to(Path("flows")):
+            data = json.loads(p.read_text())
+            flow = Flow.from_dict(data)
+            runner = Runner()
+            runner.edit_flow(flow)
+            runner.publish_flow(flow)
             tag = f"{p.stem}/{datetime.now().strftime('%Y%m%d%H%M%S')}"
             commit = commit_and_tag(p, f"update {p.name}", tag)
             self.log_panel.add_row(

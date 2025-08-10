@@ -27,3 +27,32 @@ def test_flow_requires_run_role():
     with pytest.raises(PermissionError):
         runner.run_flow(flow, {})
     runner.run_flow(flow, {"roles": ["runner"]})
+
+
+def test_flow_other_ops_require_roles():
+    flow = Flow(
+        version="1",
+        meta=Meta(
+            name="t",
+            roles={
+                "view": ["viewer"],
+                "edit": ["editor"],
+                "publish": ["publisher"],
+                "approve": ["approver"],
+            },
+        ),
+        steps=[],
+    )
+    runner = Runner()
+    with pytest.raises(PermissionError):
+        runner.view_flow(flow, {})
+    runner.view_flow(flow, {"roles": ["viewer"]})
+    with pytest.raises(PermissionError):
+        runner.edit_flow(flow, {"roles": ["viewer"]})
+    runner.edit_flow(flow, {"roles": ["editor"]})
+    with pytest.raises(PermissionError):
+        runner.publish_flow(flow, {"roles": ["editor"]})
+    runner.publish_flow(flow, {"roles": ["publisher"]})
+    with pytest.raises(PermissionError):
+        runner.approve_flow(flow, {"roles": ["publisher"]})
+    runner.approve_flow(flow, {"roles": ["approver"]})
