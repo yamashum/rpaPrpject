@@ -325,6 +325,65 @@ def test_find_image_ocr(monkeypatch):
     assert text == "text"
 
 
+def test_ocr_read_region_jpn(monkeypatch):
+    class Img:
+        def __init__(self):
+            self.crop_box = None
+
+        def crop(self, box):
+            self.crop_box = box
+            return "cropped"
+
+    img = Img()
+    pil = types.SimpleNamespace(Image=types.SimpleNamespace(open=lambda p: img))
+    calls = {}
+
+    def image_to_string(image, lang=None):
+        calls["lang"] = lang
+        calls["image"] = image
+        return "text"
+
+    def get_languages(config=""):
+        calls["langs_checked"] = True
+        return ["eng", "jpn"]
+
+    pyt = types.SimpleNamespace(image_to_string=image_to_string, get_languages=get_languages)
+    sys.modules["PIL"] = pil
+    sys.modules["PIL.Image"] = pil.Image
+    sys.modules["pytesseract"] = pyt
+    ctx = build_ctx()
+    text = actions.ocr_read(
+        Step(
+            id="o",
+            action="ocr_read",
+            params={"path": "img.png", "lang": "jpn", "region": [1, 2, 3, 4]},
+        ),
+        ctx,
+    )
+    assert text == "text"
+    assert img.crop_box == (1, 2, 4, 6)
+    assert calls["lang"] == "jpn"
+    assert calls["image"] == "cropped"
+    assert calls.get("langs_checked")
+
+
+def test_ocr_read_jpn_missing(monkeypatch):
+    pil = types.SimpleNamespace(Image=types.SimpleNamespace(open=lambda p: "img"))
+    pyt = types.SimpleNamespace(
+        image_to_string=lambda img, lang=None: "text",
+        get_languages=lambda config="": ["eng"],
+    )
+    sys.modules["PIL"] = pil
+    sys.modules["PIL.Image"] = pil.Image
+    sys.modules["pytesseract"] = pyt
+    ctx = build_ctx()
+    with pytest.raises(RuntimeError):
+        actions.ocr_read(
+            Step(id="o", action="ocr_read", params={"path": "img.png", "lang": "jpn"}),
+            ctx,
+        )
+
+
 def test_wait_image_disappear(monkeypatch):
     calls = []
 
