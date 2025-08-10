@@ -811,7 +811,9 @@ class MainWindow(QMainWindow):
         center_scroll = QScrollArea(); center_scroll.setWidgetResizable(True)
         self.canvas = DottedCanvas()
         self.add_btn = add_step_button()
-        self.add_btn.clicked.connect(self.add_step)
+        # When clicked, QPushButton emits a boolean 'checked' state. Use a lambda
+        # to discard this parameter so add_step receives no unintended arguments.
+        self.add_btn.clicked.connect(lambda: self.add_step())
         self.canvas.v.addWidget(self.add_btn)
         self.step_count = 0
         self.canvas.list.orderChanged.connect(self._sync_flow_order)
