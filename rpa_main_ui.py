@@ -187,6 +187,14 @@ class HeaderBar(QWidget):
         self.sett_btn = QPushButton("⚙  Setting"); self.sett_btn.setProperty("class","ghost")
         self.hist_btn = QPushButton("History"); self.hist_btn.setProperty("class","ghost")
         self.appr_btn = QPushButton("Request Approval"); self.appr_btn.setProperty("class","ghost")
+
+        # basic context help so first-time users understand the actions
+        self.run_btn.setToolTip("Execute the current workflow")
+        self.stop_btn.setToolTip("Stop the running workflow")
+        self.dry_btn.setToolTip("Run the workflow without side effects")
+        self.sett_btn.setToolTip("Open settings")
+        self.hist_btn.setToolTip("Show execution history")
+        self.appr_btn.setToolTip("Request approval for this flow")
         left = QHBoxLayout(); left.setSpacing(8)
         left.addWidget(self.run_btn); left.addWidget(self.stop_btn); left.addWidget(self.dry_btn); left.addWidget(self.sett_btn)
         left.addWidget(self.hist_btn); left.addWidget(self.appr_btn)
@@ -230,8 +238,12 @@ class LogPanel(QFrame):
         self.table.setItem(r, 0, QTableWidgetItem(t))
         self.table.setItem(r, 1, QTableWidgetItem(step))
         st = QTableWidgetItem(("✅  " if ok else "❌  ") + status_text)
+        # color-code status for quick visual feedback
+        st.setForeground(QColor("#1F9651" if ok else "#E74C3C"))
         self.table.setItem(r, 2, st)
         self.table.setRowHeight(r, 26)
+        # always show the latest log entry
+        self.table.scrollToBottom()
 
 # Bridge log_step callbacks into the UI thread
 class _StepLogBridge(QObject):
