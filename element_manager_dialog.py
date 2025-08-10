@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QWidget,
     QLabel,
 )
-from workflow.gui_tools import ElementInfo, capture_coordinates, element_spy
+from workflow.gui_tools import ElementInfo, capture_coordinates, element_spy, spy_on_click
 from workflow import element_store
 
 
@@ -81,14 +81,15 @@ class ElementManagerDialog(QDialog):
 
     def _on_spy(self) -> None:
         selector = self.selector_edit.text().strip()
-        if not selector:
-            return
-        info = element_spy(selector)
+        if selector:
+            info = element_spy(selector)
+            self.selector_edit.clear()
+        else:
+            info = spy_on_click()
         self._add_info(info)
-        self.selector_edit.clear()
 
     def _on_coord(self) -> None:
-        coords = capture_coordinates()
+        coords = capture_coordinates(wait=True)
         info = ElementInfo(
             selector=f"@{coords['x']},{coords['y']}",
             name=f"{coords['x']},{coords['y']}",
