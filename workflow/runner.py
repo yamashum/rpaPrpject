@@ -337,6 +337,8 @@ class Runner:
         flow: Flow,
         inputs: Optional[Dict[str, Any]] = None,
         path: Path | str | None = None,
+        *,
+        auto_resume: bool = False,
     ) -> Dict[str, Any]:
         if path is not None and not is_approved(Path(path)):
             raise ValueError("flow not approved")
@@ -349,6 +351,10 @@ class Runner:
             ctx.require_flow_op("run")
             self._run_steps(flow.steps, ctx)
             return ctx.flow_vars
+        except Exception:
+            if auto_resume:
+                return self.resume_from_last_failure(flow)
+            raise
         finally:
             self._release_lock()
 
@@ -363,6 +369,22 @@ class Runner:
             return ctx.flow_vars
         self._run_steps(flow.steps[index:], ctx)
         return ctx.flow_vars
+
+    def resume_from_last_failure(self, flow: Flow) -> Dict[str, Any]:
+        marker = self.run_dir / "last_failure.json"
+        if not marker.exists():
+            raise RuntimeError("no failure checkpoint")
+        data = json.loads(marker.read_text())
+        step_id = data.get("step_id")
+        if not step_id:
+            raise RuntimeError("invalid failure checkpoint")
+        checkpoint = self.run_dir / f"{step_id}_ctx.json"
+        result = self.resume_flow(flow, step_id, checkpoint)
+        try:
+            marker.unlink()
+        except FileNotFoundError:
+            pass
+        return result
 
     def view_flow(self, flow: Flow, inputs: Optional[Dict[str, Any]] = None) -> None:
         ctx = ExecutionContext(flow, inputs or {})
@@ -747,6 +769,8 @@ class Runner:
             step.selector = original_selector
         ctx.pop_local()
         if last_exc is not None:
+            marker = self.run_dir / "last_failure.json"
+            marker.write_text(json.dumps({"step_id": step.id}))
             raise last_exc
 
     # ----- control -----
