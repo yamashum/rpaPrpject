@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 import queue
-from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QMimeData
 from PyQt6.QtGui import (
     QFont,
     QPainter,
@@ -80,20 +80,54 @@ class StepListWidget(QListWidget):
 
     def __init__(self):
         super().__init__()
-        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        # Allow both internal moves and external drops
+        self.setDragDropMode(QListWidget.DragDropMode.DragDrop)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setSpacing(18)
         self.setStyleSheet("QListWidget{background:transparent;border:none;}")
 
+    def dragEnterEvent(self, event):  # type: ignore[override]
+        if event.source() is self:
+            event.setDropAction(Qt.DropAction.MoveAction)
+            super().dragEnterEvent(event)
+        elif event.mimeData().hasText():
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):  # type: ignore[override]
+        if event.source() is self:
+            event.setDropAction(Qt.DropAction.MoveAction)
+            super().dragMoveEvent(event)
+        elif event.mimeData().hasText():
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
     def dropEvent(self, event):  # type: ignore[override]
-        super().dropEvent(event)
-        self.orderChanged.emit()
+        if event.source() is self:
+            event.setDropAction(Qt.DropAction.MoveAction)
+            super().dropEvent(event)
+            self.orderChanged.emit()
+        elif event.mimeData().hasText():
+            action = event.mimeData().text().strip()
+            mw = self.window()
+            if hasattr(mw, "add_step"):
+                row = self.indexAt(event.position().toPoint()).row()
+                index = row if row >= 0 else None
+                mw.add_step(action=action, index=index)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
 
 class DottedCanvas(QWidget):
     def __init__(self):
         super().__init__()
         self.setStyleSheet("background-color:#FAFBFE;")
+        self.setAcceptDrops(True)
         self.v = QVBoxLayout(self)
         self.v.setContentsMargins(40, 24, 40, 24)
         self.v.setSpacing(18)
@@ -111,6 +145,23 @@ class DottedCanvas(QWidget):
             for x in range(0, self.width(), step):
                 p.drawPoint(x, y)
         p.end()
+
+    def dragEnterEvent(self, event):  # type: ignore[override]
+        if event.mimeData().hasText():
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):  # type: ignore[override]
+        if event.mimeData().hasText():
+            action = event.mimeData().text().strip()
+            mw = self.window()
+            if hasattr(mw, "add_step"):
+                mw.add_step(action=action)
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
 class StepCard(QFrame):
     def __init__(self, icon, title, subtitle):
@@ -148,6 +199,21 @@ def add_step_button():
     return btn
 
 # ---------- 左パレット ----------
+class _PaletteListWidget(QListWidget):
+    """List widget for the action palette that provides drag support."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setDragEnabled(True)
+
+    def mimeData(self, items):  # type: ignore[override]
+        mime = QMimeData()
+        if items:
+            item = items[0]
+            if not item.font().bold():
+                mime.setText(item.text().strip())
+        return mime
+
 class ActionPalette(QWidget):
     def __init__(self):
         super().__init__()
@@ -162,7 +228,7 @@ class ActionPalette(QWidget):
         """)
         v = QVBoxLayout(self); v.setContentsMargins(16,16,16,16); v.setSpacing(10)
         title = QLabel("Action Palette"); title.setObjectName("title")
-        self.list = QListWidget()
+        self.list = _PaletteListWidget()
         v.addWidget(title); v.addWidget(self.list)
         self._section("Window Operations", ["Launch / Attach", "Activate / Bring to Front"])
         self._section("Mouse and Keyboard", ["Click", "Double Click", "Type Text"])
