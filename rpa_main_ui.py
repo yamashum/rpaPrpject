@@ -275,15 +275,25 @@ class ActionPalette(QWidget):
         title = QLabel("Action Palette"); title.setObjectName("title")
         self.list = _PaletteListWidget()
         v.addWidget(title); v.addWidget(self.list)
+        self._adv_items: list[QListWidgetItem] = []
         for header, items in list_actions().items():
             display = [self._humanize(a) for a in items]
-            self._section(header, display)
+            self._section(header, display, advanced=header == "詳細設定")
 
-    def _section(self, header, items):
+    def _section(self, header, items, *, advanced: bool = False):
         h = QListWidgetItem(f"  {header}"); f = QFont(); f.setBold(True); h.setFont(f)
         self.list.addItem(h)
+        targets = [h]
         for it in items:
-            self.list.addItem(QListWidgetItem(f"    {it}"))
+            item = QListWidgetItem(f"    {it}")
+            self.list.addItem(item)
+            targets.append(item)
+        if advanced:
+            self._adv_items.extend(targets)
+
+    def set_advanced_visible(self, visible: bool) -> None:
+        for item in self._adv_items:
+            item.setHidden(not visible)
 
     @staticmethod
     def _humanize(name: str) -> str:
@@ -327,12 +337,22 @@ class PropertiesPanel(QWidget):
         form.addRow("Action", self.act)
         form.addRow("Seekitor Editor", QPushButton("開く…"))
         form.addRow(self.selector)
-        form.addRow("Output Variable", self.out)
-        form.addRow("Timeout", self.to)
-        form.addRow("Retry Count", self.re)
         v.addLayout(form)
-        v.addWidget(QLabel("On Failure"))
-        v.addWidget(self.chk)
+
+        self.advanced_group = QWidget()
+        adv_v = QVBoxLayout(self.advanced_group)
+        adv_v.setContentsMargins(0, 0, 0, 0)
+        adv_v.setSpacing(10)
+        adv_form = QFormLayout()
+        adv_form.setHorizontalSpacing(12)
+        adv_form.setVerticalSpacing(10)
+        adv_form.addRow("Output Variable", self.out)
+        adv_form.addRow("Timeout", self.to)
+        adv_form.addRow("Retry Count", self.re)
+        adv_v.addLayout(adv_form)
+        adv_v.addWidget(QLabel("On Failure"))
+        adv_v.addWidget(self.chk)
+        v.addWidget(self.advanced_group)
         v.addStretch(1)
 
         self._current_step: Step | None = None
@@ -344,6 +364,9 @@ class PropertiesPanel(QWidget):
         self.to.valueChanged.connect(self._on_changed)
         self.re.valueChanged.connect(self._on_changed)
         self.chk.toggled.connect(self._on_changed)
+
+    def set_advanced_visible(self, visible: bool) -> None:
+        self.advanced_group.setVisible(visible)
 
     def load_step(self, step: Step) -> None:
         """Populate the form fields from ``step``."""
@@ -409,6 +432,7 @@ class HeaderBar(QWidget):
         self.sett_btn = QPushButton("⚙ 設定"); self.sett_btn.setProperty("class","ghost")
         self.hist_btn = QPushButton("履歴"); self.hist_btn.setProperty("class","ghost")
         self.appr_btn = QPushButton("承認依頼"); self.appr_btn.setProperty("class","ghost")
+        self.adv_chk = QCheckBox("詳細設定"); self.adv_chk.setProperty("class","ghost")
 
         # basic context help so first-time users understand the actions
         self.run_btn.setToolTip("Execute the current workflow")
@@ -419,7 +443,7 @@ class HeaderBar(QWidget):
         self.appr_btn.setToolTip("Request approval for this flow")
         left = QHBoxLayout(); left.setSpacing(8)
         left.addWidget(self.run_btn); left.addWidget(self.stop_btn); left.addWidget(self.dry_btn); left.addWidget(self.sett_btn)
-        left.addWidget(self.hist_btn); left.addWidget(self.appr_btn)
+        left.addWidget(self.hist_btn); left.addWidget(self.appr_btn); left.addWidget(self.adv_chk)
         h.addLayout(left); h.addStretch(1)
         user = QLabel("🔍    👤"); user.setStyleSheet("color:#8AA0C6;")
         h.addWidget(user)
@@ -625,28 +649,33 @@ class MainWindow(QMainWindow):
         self.header.sett_btn.clicked.connect(self.on_setting)
         self.header.hist_btn.clicked.connect(self.show_history)
         self.header.appr_btn.clicked.connect(self.request_approval)
+        self.header.adv_chk.toggled.connect(self._on_adv_toggled)
         # Add steps with a single click from the action palette instead of requiring a double-click
         self.action_palette.list.itemClicked.connect(self.palette_clicked)
 
-        # Launch onboarding wizard on first run
+        # Launch onboarding wizard on first run and load role
         self._config_path = Path.home() / ".config" / "rpa_project" / "config.json"
-        show_wizard = False
         cfg = {}
-        if not os.environ.get("PYTEST_CURRENT_TEST"):
-            if self._config_path.exists():
-                try:
-                    cfg = json.loads(self._config_path.read_text())
-                except Exception:
-                    cfg = {}
-            if not cfg.get("onboarding_complete"):
-                show_wizard = True
-                self._config = cfg
+        if self._config_path.exists():
+            try:
+                cfg = json.loads(self._config_path.read_text())
+            except Exception:
+                cfg = {}
+        self.role = cfg.get("role", "user")
+        show_wizard = False
+        if not os.environ.get("PYTEST_CURRENT_TEST") and not cfg.get("onboarding_complete"):
+            show_wizard = True
+            self._config = cfg
         if show_wizard:
             wizard = OnboardingWizard(self)
             if wizard.exec():
                 cfg["onboarding_complete"] = True
                 self._config_path.parent.mkdir(parents=True, exist_ok=True)
                 self._config_path.write_text(json.dumps(cfg, indent=2))
+
+        initial_adv = self.role == "admin"
+        self.header.adv_chk.setChecked(initial_adv)
+        self._on_adv_toggled(initial_adv)
 
     def save_flow(self) -> None:
         """Persist the current flow to ``self.current_flow_path``."""
@@ -759,6 +788,10 @@ class MainWindow(QMainWindow):
         if item.font().bold():
             return
         self.add_step(action=item.text().strip())
+
+    def _on_adv_toggled(self, checked: bool) -> None:
+        self.prop_panel.set_advanced_visible(checked)
+        self.action_palette.set_advanced_visible(checked)
 
     def on_run(self):
         """Execute the current flow and log the result."""
