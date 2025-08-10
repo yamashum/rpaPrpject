@@ -1,17 +1,43 @@
 import os
 import sys
 import json
+import copy
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 import queue
 from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal
-from PyQt6.QtGui import QFont, QPainter, QColor, QPen
+from PyQt6.QtGui import (
+    QFont,
+    QPainter,
+    QColor,
+    QPen,
+    QKeySequence,
+    QShortcut,
+)
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QSplitter,
-    QPushButton, QLabel, QListWidget, QListWidgetItem, QFrame, QScrollArea,
-    QFormLayout, QLineEdit, QSpinBox, QCheckBox, QComboBox, QTableWidget,
-    QTableWidgetItem, QHeaderView, QDialog, QPlainTextEdit
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QSplitter,
+    QPushButton,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QFrame,
+    QScrollArea,
+    QFormLayout,
+    QLineEdit,
+    QSpinBox,
+    QCheckBox,
+    QComboBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QDialog,
+    QPlainTextEdit,
 )
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -47,6 +73,23 @@ class FlowChangeHandler(FileSystemEventHandler, QObject):
             self._handle(event.src_path)
 
 # ---------- 中央キャンバス（ドット背景＋カード） ----------
+class StepListWidget(QListWidget):
+    """List widget that supports internal drag & drop to reorder steps."""
+
+    orderChanged = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setSpacing(18)
+        self.setStyleSheet("QListWidget{background:transparent;border:none;}")
+
+    def dropEvent(self, event):  # type: ignore[override]
+        super().dropEvent(event)
+        self.orderChanged.emit()
+
+
 class DottedCanvas(QWidget):
     def __init__(self):
         super().__init__()
@@ -55,8 +98,10 @@ class DottedCanvas(QWidget):
         self.v.setContentsMargins(40, 24, 40, 24)
         self.v.setSpacing(18)
         self.v.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        self.list = StepListWidget()
+        self.v.addWidget(self.list)
 
-    def paintEvent(self, e):
+    def paintEvent(self, e):  # type: ignore[override]
         super().paintEvent(e)
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing, False)
@@ -87,14 +132,10 @@ class StepCard(QFrame):
         texts.addWidget(t); texts.addWidget(s)
         more = QPushButton("⋯")
         more.setFixedSize(28, 28)
-        more.setStyleSheet("QPushButton{background:#fff;border:1px solid #E5EAF5;border-radius:14px;color:#6B7A99;font-size:16px;} QPushButton:hover{background:#F6F8FD;}")
+        more.setStyleSheet(
+            "QPushButton{background:#fff;border:1px solid #E5EAF5;border-radius:14px;color:#6B7A99;font-size:16px;} QPushButton:hover{background:#F6F8FD;}"
+        )
         h.addWidget(ic); h.addLayout(texts); h.addStretch(1); h.addWidget(more)
-
-def arrow_label():
-    a = QLabel("↓")
-    a.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    a.setStyleSheet("color:#8AA0C6; font-size:20px;")
-    return a
 
 def add_step_button():
     btn = QPushButton("+  Add Step")
@@ -340,11 +381,21 @@ class MainWindow(QMainWindow):
         self.add_btn.clicked.connect(self.add_step)
         self.canvas.v.addWidget(self.add_btn)
         self.step_count = 0
+        self.canvas.list.orderChanged.connect(self._sync_flow_order)
+
+        # undo/redo and clipboard support
+        self.undo_stack: list[list[Step]] = []
+        self.redo_stack: list[list[Step]] = []
+        QShortcut(QKeySequence.StandardKey.Copy, self, self.copy_step)
+        QShortcut(QKeySequence.StandardKey.Paste, self, self.paste_step)
+        QShortcut(QKeySequence.StandardKey.Undo, self, self.undo)
+        QShortcut(QKeySequence.StandardKey.Redo, self, self.redo)
+
         # 初期カード配置
-        self.add_step(icon="🖱️", action="Click")
-        self.add_step(icon="🧾", action="Input")
-        self.add_step(icon="📊", action="Write to Excel")
-        self.add_step(icon="🌐", action="Web - navigate")
+        self.add_step(icon="🖱️", action="Click", record=False)
+        self.add_step(icon="🧾", action="Input", record=False)
+        self.add_step(icon="📊", action="Write to Excel", record=False)
+        self.add_step(icon="🌐", action="Web - navigate", record=False)
         center_scroll.setWidget(self.canvas)
         right = PropertiesPanel()
         hsplit.addWidget(self.action_palette); hsplit.addWidget(center_scroll); hsplit.addWidget(right)
@@ -410,17 +461,89 @@ class MainWindow(QMainWindow):
             title = action.get("action") or action.get("type") or "Recorded"
             self.add_step(action=title)
 
-    def add_step(self, icon="🧩", action="New Step"):
-        """Insert a new step card above the add button."""
+    def record_history(self) -> None:
+        """Store current step order for undo support."""
+        self.undo_stack.append(copy.deepcopy(self.flow.steps))
+        self.redo_stack.clear()
+
+    def _refresh_titles(self) -> None:
+        for i in range(self.canvas.list.count()):
+            item = self.canvas.list.item(i)
+            card = self.canvas.list.itemWidget(item)
+            title_lbl = card.findChild(QLabel, "title")
+            if title_lbl:
+                title_lbl.setText(f"Step {i+1}")
+
+    def _add_step_card(self, step: Step, index: int | None = None, icon: str = "🧩") -> None:
+        card = StepCard(icon, "", step.action)
+        item = QListWidgetItem()
+        item.setSizeHint(card.size())
+        item.setData(Qt.ItemDataRole.UserRole, step)
+        if index is None:
+            self.canvas.list.addItem(item)
+        else:
+            self.canvas.list.insertItem(index, item)
+        self.canvas.list.setItemWidget(item, card)
+
+    def _rebuild_from_flow(self) -> None:
+        self.canvas.list.clear()
+        for step in self.flow.steps:
+            self._add_step_card(step)
+        self._refresh_titles()
+
+    def _sync_flow_order(self) -> None:
+        self.record_history()
+        new_steps: list[Step] = []
+        for i in range(self.canvas.list.count()):
+            item = self.canvas.list.item(i)
+            step = item.data(Qt.ItemDataRole.UserRole)
+            new_steps.append(step)
+        self.flow.steps = new_steps
+        self._refresh_titles()
+        self.save_flow()
+
+    def add_step(self, icon="🧩", action="New Step", index: int | None = None, record: bool = True):
+        """Insert a new step card."""
+        if record:
+            self.record_history()
         self.step_count += 1
-        card = StepCard(icon, f"Step {self.step_count}", action)
-        idx = self.canvas.v.indexOf(self.add_btn)
-        self.canvas.v.insertWidget(idx, card)
-        idx = self.canvas.v.indexOf(self.add_btn)
-        self.canvas.v.insertWidget(idx, arrow_label())
-        # Track the added step in the Flow model
-        step_id = f"s{self.step_count}"
-        self.flow.steps.append(Step(id=step_id, action=action))
+        step = Step(id=f"s{self.step_count}", action=action)
+        if index is None:
+            self.flow.steps.append(step)
+        else:
+            self.flow.steps.insert(index, step)
+        self._add_step_card(step, index=index, icon=icon)
+        self._refresh_titles()
+        self.save_flow()
+
+    def copy_step(self) -> None:
+        row = self.canvas.list.currentRow()
+        if row < 0:
+            return
+        item = self.canvas.list.item(row)
+        step = item.data(Qt.ItemDataRole.UserRole)
+        self._copied_step = copy.deepcopy(step)
+
+    def paste_step(self) -> None:
+        if not hasattr(self, "_copied_step"):
+            return
+        row = self.canvas.list.currentRow()
+        self.add_step(action=self._copied_step.action, index=row + 1 if row >= 0 else None)
+
+    def undo(self) -> None:
+        if not self.undo_stack:
+            return
+        self.redo_stack.append(copy.deepcopy(self.flow.steps))
+        self.flow.steps = self.undo_stack.pop()
+        self._rebuild_from_flow()
+        self.save_flow()
+
+    def redo(self) -> None:
+        if not self.redo_stack:
+            return
+        self.undo_stack.append(copy.deepcopy(self.flow.steps))
+        self.flow.steps = self.redo_stack.pop()
+        self._rebuild_from_flow()
         self.save_flow()
 
     def palette_double_clicked(self, item):
