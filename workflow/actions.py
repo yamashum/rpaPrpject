@@ -1502,18 +1502,51 @@ def wait_image_disappear(step: Step, ctx: ExecutionContext) -> Any:
 
 
 def ocr_read(step: Step, ctx: ExecutionContext) -> Any:
-    """Run OCR on an image at ``path`` using ``pytesseract``."""
+    """Run OCR on an image at ``path`` using ``pytesseract``.
+
+    Parameters
+    ----------
+    path: str
+        Path to the image file.
+    lang: str, optional
+        Language(s) passed to Tesseract. Defaults to ``"eng"``.
+    region: sequence or dict, optional
+        When provided, defines the ``(x, y, width, height)`` region to crop
+        before running OCR.
+    """
 
     path = step.params.get("path")
     if not path:
         raise ValueError("ocr_read requires 'path'")
     lang = step.params.get("lang", "eng")
+    region = step.params.get("region")
     try:  # pragma: no cover - optional dependency
         from PIL import Image  # type: ignore
         import pytesseract  # type: ignore
     except Exception as exc:  # pragma: no cover - optional dependency
         raise RuntimeError("pytesseract not installed") from exc
+
+    if lang and "jpn" in lang.split("+"):
+        available = pytesseract.get_languages(config="")
+        if "jpn" not in available:
+            raise RuntimeError("Japanese language data ('jpn') not installed for Tesseract")
+
     img = Image.open(path)
+    if region is not None:
+        if isinstance(region, dict):
+            x = region.get("x")
+            y = region.get("y")
+            width = region.get("width")
+            height = region.get("height")
+        else:
+            try:
+                x, y, width, height = region
+            except Exception as exc:
+                raise ValueError("region must be (x, y, width, height)") from exc
+        if None in (x, y, width, height):
+            raise ValueError("region must include x, y, width, height")
+        img = img.crop((x, y, x + width, y + height))
+
     text = pytesseract.image_to_string(img, lang=lang)
     return text.strip()
 
