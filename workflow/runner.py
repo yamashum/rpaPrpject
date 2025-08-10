@@ -58,6 +58,7 @@ ACTION_PERMISSIONS: Dict[str, str] = {
     "wait_image_disappear": "desktop.image",
     "ocr_read": "desktop.image",
     "click_xy": "desktop.uia",
+    "table.wizard": "desktop.uia",
     "table.find_row": "desktop.uia",
     "row.select": "desktop.uia",
     "row.double_click": "desktop.uia",

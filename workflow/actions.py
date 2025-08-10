@@ -1119,6 +1119,59 @@ def type_text(step: Step, ctx: ExecutionContext) -> Any:
     return set_value(step, ctx)
 
 
+def table_wizard(step: Step, ctx: ExecutionContext) -> Any:
+    """Parse simple column queries and delegate to :func:`find_table_row`.
+
+    Parameters
+    ----------
+    query: dict | str
+        Either a mapping of column specifiers to values or a comma separated
+        string of ``column=value`` pairs.  Column specifiers may be header names
+        or zero-based indices.  Only equality checks are supported by the
+        wizard.  The generated criteria are forwarded to
+        :func:`find_table_row`.
+    select: bool, optional
+        When ``True`` and the matched row exposes a ``select`` method it will be
+        invoked after locating the row.
+    """
+
+    query = step.params.get("query")
+    if not query:
+        raise ValueError("table.wizard requires 'query'")
+
+    criteria: Dict[Any, Dict[str, Any]] = {}
+    if isinstance(query, str):
+        parts = [p.strip() for p in query.split(",") if p.strip()]
+        for part in parts:
+            if "=" not in part:
+                raise ValueError(f"invalid query segment: {part}")
+            col, val = [x.strip() for x in part.split("=", 1)]
+            if col.isdigit():
+                col = int(col)
+            criteria[col] = {"equals": val}
+    elif isinstance(query, dict):
+        for col, val in query.items():
+            if isinstance(col, str) and col.isdigit():
+                col = int(col)
+            criteria[col] = {"equals": val}
+    else:
+        raise TypeError("query must be str or dict")
+
+    timeout = step.params.get("timeout", 3000)
+    find_step = Step(
+        id=step.id,
+        action="table.find_row",
+        selector=step.selector,
+        params={"criteria": criteria, "timeout": timeout},
+    )
+    row = find_table_row(find_step, ctx)
+
+    if step.params.get("select") and hasattr(row, "select"):
+        row.select()
+
+    return row
+
+
 def find_table_row(step: Step, ctx: ExecutionContext) -> Any:
     """Return the first table row matching ``criteria``.
 
@@ -1672,6 +1725,7 @@ _UI_ACTIONS = [
     "wait_image_disappear",
     "ocr_read",
     "click_xy",
+    "table.wizard",
     "table.find_row",
     "row.select",
     "row.double_click",
@@ -1707,6 +1761,7 @@ BUILTIN_ACTIONS.update(
         "find_image": find_image,
         "wait_image_disappear": wait_image_disappear,
         "ocr_read": ocr_read,
+        "table.wizard": table_wizard,
         "table.find_row": find_table_row,
         "row.select": select_row,
         "row.double_click": double_click_row,

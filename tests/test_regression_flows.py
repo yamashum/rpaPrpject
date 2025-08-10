@@ -7,6 +7,7 @@ from workflow.runner import Runner
 
 from tests.mocks.mock_dom import MockDOM
 from tests.mocks.mock_network import MockNetwork
+from workflow import actions
 
 pytestmark = pytest.mark.regression
 
@@ -43,3 +44,30 @@ def test_network_failure_flow():
     with pytest.raises(ConnectionError):
         runner.run_file(flow_path("network_failure_flow.json"))
     NETWORK.fail = False
+
+
+def test_table_wizard_flow(monkeypatch):
+    runner = build_runner()
+
+    class Row(dict):
+        def __init__(self, data):
+            super().__init__(data)
+            self.selected = False
+
+        def select(self):
+            self.selected = True
+
+    class Table:
+        headers = ["id", "name"]
+
+        def __init__(self):
+            self.rows = [
+                Row({"id": "1", "name": "Bob"}),
+                Row({"id": "2", "name": "Alice"}),
+            ]
+
+    table = Table()
+    monkeypatch.setattr(actions, "resolve_selector", lambda s: {"strategy": "mock", "target": table})
+    result = runner.run_file(flow_path("table_wizard_flow.json"))
+    assert result["found"]["id"] == "2"
+    assert result["found"].selected

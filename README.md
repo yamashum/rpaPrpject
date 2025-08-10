@@ -102,3 +102,21 @@ s.add_job(
 }
 ```
 
+## テーブルウィザード
+
+`table.wizard` は列ヘッダ名やインデックスから検索条件を組み立て、
+内部で `table.find_row` と `row.select` を実行するアクションです。
+例えば次のように記述すると `name` 列が `Alice` の行を選択できます。
+
+```json
+{
+  "id": "find",
+  "action": "table.wizard",
+  "selector": {"mock": {}},
+  "params": {"query": "name=Alice", "select": true},
+  "out": "row"
+}
+```
+
+上記例では検索結果の行オブジェクトが `row` 変数に格納されます。
+
