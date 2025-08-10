@@ -52,6 +52,7 @@ from workflow.runner import Runner
 from workflow.logging import set_step_log_callback
 from workflow.actions import list_actions
 from settings_dialog import SettingsDialog
+from selector_editor_dialog import SelectorEditorDialog
 
 # Global queue receiving actions recorded by external modules
 recorded_actions_q: "queue.Queue[dict]" = queue.Queue()
@@ -338,7 +339,9 @@ class PropertiesPanel(QWidget):
         self.chk = QCheckBox("Save screenshot")
         self.chk.setChecked(True)
         form.addRow("Action", self.act)
-        form.addRow("Seekitor Editor", QPushButton("開く…"))
+        self.selector_btn = QPushButton("開く…")
+        self.selector_btn.clicked.connect(self._open_selector_editor)
+        form.addRow("Seekitor Editor", self.selector_btn)
         form.addRow(self.selector)
         v.addLayout(form)
 
@@ -367,6 +370,13 @@ class PropertiesPanel(QWidget):
         self.to.valueChanged.connect(self._on_changed)
         self.re.valueChanged.connect(self._on_changed)
         self.chk.toggled.connect(self._on_changed)
+
+    def _open_selector_editor(self) -> None:
+        """Open a dialog for editing the selector value."""
+        dlg = SelectorEditorDialog(self.selector.text(), self)
+        if dlg.exec():
+            self.selector.setText(dlg.selector)
+            self._on_changed()
 
     def set_advanced_visible(self, visible: bool) -> None:
         self.advanced_group.setVisible(visible)
