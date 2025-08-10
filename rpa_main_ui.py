@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 import queue
@@ -16,7 +17,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from workflow.flow_git import commit_and_tag, history as flow_history, diff as flow_diff, mark_approved
-from workflow.flow import Flow
+from workflow.flow import Flow, Step, Meta
 from workflow.runner import Runner
 from workflow.logging import set_step_log_callback
 
@@ -310,6 +311,8 @@ class MainWindow(QMainWindow):
         self.resize(1280, 860)
         self.current_flow_path = Path("flows/sample_flow.json")
         self.runner: Runner | None = None
+        # Flow instance representing the current workflow
+        self.flow = Flow(version="1.0", meta=Meta(name=self.current_flow_path.stem))
 
         root = QWidget(); self.setCentralWidget(root)
         root_v = QVBoxLayout(root); root_v.setContentsMargins(0,0,0,0); root_v.setSpacing(0)
@@ -375,6 +378,11 @@ class MainWindow(QMainWindow):
         self.header.appr_btn.clicked.connect(self.request_approval)
         self.action_palette.list.itemDoubleClicked.connect(self.palette_double_clicked)
 
+    def save_flow(self) -> None:
+        """Persist the current flow to ``self.current_flow_path``."""
+        data = asdict(self.flow)
+        self.current_flow_path.write_text(json.dumps(data, indent=2))
+
     def record_callback(self, action: dict) -> None:
         """Callback for :func:`workflow.gui_tools.record_web`.
 
@@ -398,6 +406,10 @@ class MainWindow(QMainWindow):
         self.canvas.v.insertWidget(idx, card)
         idx = self.canvas.v.indexOf(self.add_btn)
         self.canvas.v.insertWidget(idx, arrow_label())
+        # Track the added step in the Flow model
+        step_id = f"s{self.step_count}"
+        self.flow.steps.append(Step(id=step_id, action=action))
+        self.save_flow()
 
     def palette_double_clicked(self, item):
         if item.font().bold():
