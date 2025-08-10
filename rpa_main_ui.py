@@ -41,6 +41,7 @@ from PyQt6.QtWidgets import (
     QWizardPage,
     QPlainTextEdit,
     QMessageBox,
+    QMenu,
 )
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -228,12 +229,12 @@ class StepCard(QFrame):
         t = QLabel(title); t.setObjectName("title"); t.setFont(QFont("", 11))
         s = QLabel(subtitle); s.setObjectName("sub");  s.setFont(QFont("", 10))
         texts.addWidget(t); texts.addWidget(s)
-        more = QPushButton("⋯")
-        more.setFixedSize(28, 28)
-        more.setStyleSheet(
+        self.more = QPushButton("⋯")
+        self.more.setFixedSize(28, 28)
+        self.more.setStyleSheet(
             "QPushButton{background:#fff;border:1px solid #E5EAF5;border-radius:14px;color:#6B7A99;font-size:16px;} QPushButton:hover{background:#F6F8FD;}"
         )
-        h.addWidget(ic); h.addLayout(texts); h.addStretch(1); h.addWidget(more)
+        h.addWidget(ic); h.addLayout(texts); h.addStretch(1); h.addWidget(self.more)
 
 def add_step_button():
     btn = QPushButton("＋ ステップ追加")
@@ -728,6 +729,15 @@ class MainWindow(QMainWindow):
         else:
             self.canvas.list.insertItem(index, item)
         self.canvas.list.setItemWidget(item, card)
+        card.more.clicked.connect(lambda _, it=item, btn=card.more: self._show_step_menu(it, btn))
+
+    def _show_step_menu(self, item: QListWidgetItem, button: QPushButton) -> None:
+        self.canvas.list.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction("コピー", self.copy_step)
+        menu.addAction("削除", self.delete_step)
+        menu.addAction("詳細編集", self.edit_step)
+        menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
 
     def _rebuild_from_flow(self) -> None:
         self.canvas.list.clear()
@@ -773,6 +783,24 @@ class MainWindow(QMainWindow):
             return
         row = self.canvas.list.currentRow()
         self.add_step(action=self._copied_step.action, index=row + 1 if row >= 0 else None)
+
+    def delete_step(self) -> None:
+        row = self.canvas.list.currentRow()
+        if row < 0:
+            return
+        self.record_history()
+        self.canvas.list.takeItem(row)
+        del self.flow.steps[row]
+        self._refresh_titles()
+        self.save_flow()
+
+    def edit_step(self) -> None:
+        row = self.canvas.list.currentRow()
+        if row < 0:
+            return
+        item = self.canvas.list.item(row)
+        step = item.data(Qt.ItemDataRole.UserRole)
+        self.prop_panel.load_step(step)
 
     def undo(self) -> None:
         if not self.undo_stack:
