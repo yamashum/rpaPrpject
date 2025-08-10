@@ -419,7 +419,27 @@ class MainWindow(QMainWindow):
             self.log_panel.add_row(now, "Run", "Stop requested", True)
 
     def on_dry(self):
-        self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Dry Run", "Started", True)
+        now = datetime.now().strftime("%H:%M:%S")
+        self.log_panel.add_row(now, "Dry Run", "Started", True)
+        try:
+            data = json.loads(self.current_flow_path.read_text())
+            flow = Flow.from_dict(data)
+            self.runner = Runner()
+            result = self.runner.run_flow(flow, auto_resume=True)
+        except Exception as exc:  # pragma: no cover - defensive
+            self.log_panel.add_row(
+                datetime.now().strftime("%H:%M:%S"),
+                "Dry Run",
+                f"Failed: {exc}",
+                False,
+            )
+        else:
+            self.log_panel.add_row(
+                datetime.now().strftime("%H:%M:%S"),
+                "Dry Run",
+                f"Finished: {json.dumps(result)}",
+                True,
+            )
 
     def on_setting(self):
         self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Setting", "Opened", True)
