@@ -93,6 +93,8 @@ class ElementInfo:
     control_type: str | None = None
     class_name: str | None = None
     hierarchy: List[Dict[str, str]] | None = None
+    x: int | None = None
+    y: int | None = None
 
 
 def element_spy(selector: str, text: str | None = None) -> ElementInfo:
@@ -161,6 +163,9 @@ def format_spy_result(info: ElementInfo) -> List[Tuple[str, str]]:
             h.get("name") or h.get("automation_id") or "?" for h in info.hierarchy
         )
         rows.append(("Hierarchy", chain))
+
+    if info.x is not None and info.y is not None:
+        rows.append(("Coordinates", f"{info.x}, {info.y}"))
 
     return rows
 

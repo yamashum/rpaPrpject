@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QMessageBox,
     QMenu,
+    QInputDialog,
 )
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -54,6 +55,7 @@ from workflow.actions import list_actions
 from settings_dialog import SettingsDialog
 from selector_editor_dialog import SelectorEditorDialog
 from element_manager_dialog import ElementManagerDialog
+from workflow import element_store
 
 # Global queue receiving actions recorded by external modules
 recorded_actions_q: "queue.Queue[dict]" = queue.Queue()
@@ -76,6 +78,8 @@ TEXT = {
     "param_options": "選択肢",
     "label_action": "アクション",
     "label_selector_editor": "セレクタ編集",
+    "label_saved_elements": "保存要素",
+    "select_saved_element": "選択…",
     "label_output_variable": "出力変数",
     "label_timeout": "タイムアウト",
     "label_retry": "再試行回数",
@@ -452,6 +456,9 @@ class PropertiesPanel(QWidget):
         self.selector_btn = QPushButton("開く…")
         self.selector_btn.clicked.connect(self._open_selector_editor)
         form.addRow(TEXT["label_selector_editor"], self.selector_btn)
+        self.saved_elem_btn = QPushButton(TEXT["select_saved_element"])
+        self.saved_elem_btn.clicked.connect(self._choose_element)
+        form.addRow(TEXT["label_saved_elements"], self.saved_elem_btn)
         form.addRow(self.selector)
         v.addLayout(form)
 
@@ -490,6 +497,7 @@ class PropertiesPanel(QWidget):
         self.re.valueChanged.connect(self._on_changed)
         self.chk.toggled.connect(self._on_changed)
         self._selector_label = form.labelForField(self.selector_btn)
+        self._saved_label = form.labelForField(self.saved_elem_btn)
 
     def _open_selector_editor(self) -> None:
         """Open a dialog for editing the selector value."""
@@ -497,6 +505,21 @@ class PropertiesPanel(QWidget):
         if dlg.exec():
             self.selector.setText(dlg.selector)
             self._on_changed()
+
+    def _choose_element(self) -> None:
+        """Populate selector from a saved element."""
+        elems = element_store.list_elements()
+        if not elems:
+            return
+        names = [e.name or e.selector for e in elems]
+        title = TEXT["label_saved_elements"]
+        name, ok = QInputDialog.getItem(self, title, title, names, 0, False)
+        if ok and name:
+            for elem in elems:
+                if (elem.name or elem.selector) == name:
+                    self.selector.setText(elem.selector)
+                    self._on_changed()
+                    break
 
     def set_advanced_visible(self, visible: bool) -> None:
         self.advanced_group.setVisible(visible)
@@ -608,8 +631,11 @@ class PropertiesPanel(QWidget):
         # show/hide selector row
         self.selector.setVisible(needs_selector)
         self.selector_btn.setVisible(needs_selector)
+        self.saved_elem_btn.setVisible(needs_selector)
         if self._selector_label:
             self._selector_label.setVisible(needs_selector)
+        if self._saved_label:
+            self._saved_label.setVisible(needs_selector)
 
     def _on_action_changed(self, idx: int) -> None:
         if self._loading:
