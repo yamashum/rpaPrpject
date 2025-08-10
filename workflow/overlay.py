@@ -23,9 +23,9 @@ if QtWidgets is not None:  # pragma: no cover - GUI code
             )
             self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
             layout = QtWidgets.QHBoxLayout(self)
-            self.pause_btn = QtWidgets.QPushButton("Pause")
-            self.stop_btn = QtWidgets.QPushButton("Stop")
-            self.skip_btn = QtWidgets.QPushButton("Skip")
+            self.pause_btn = QtWidgets.QPushButton("一時停止")
+            self.stop_btn = QtWidgets.QPushButton("停止")
+            self.skip_btn = QtWidgets.QPushButton("スキップ")
             layout.addWidget(self.pause_btn)
             layout.addWidget(self.stop_btn)
             layout.addWidget(self.skip_btn)
@@ -36,10 +36,10 @@ if QtWidgets is not None:  # pragma: no cover - GUI code
         def _toggle_pause(self) -> None:
             if self.runner.paused:
                 self.runner.resume()
-                self.pause_btn.setText("Pause")
+                self.pause_btn.setText("一時停止")
             else:
                 self.runner.pause()
-                self.pause_btn.setText("Resume")
+                self.pause_btn.setText("再開")
 else:  # pragma: no cover - optional dependency
     class ControlOverlay:  # type: ignore
         """Fallback placeholder when PyQt6 is not available."""
