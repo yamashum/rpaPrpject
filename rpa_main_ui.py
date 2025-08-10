@@ -306,6 +306,58 @@ class ActionPalette(QWidget):
 
 # ---------- 右プロパティ ----------
 class PropertiesPanel(QWidget):
+    """Panel showing editable properties for the selected step.
+
+    The panel dynamically builds a small form based on the step action.  Each
+    action can define its own parameters and whether common fields like the
+    selector should be displayed.  Only a handful of basic actions are
+    supported here but the structure allows easy extension in the future.
+    """
+
+    # form specifications for individual actions
+    ACTION_FORMS: dict[str, dict[str, object]] = {
+        "log": {
+            "selector": False,
+            "params": [("message", QLineEdit, "Message", {})],
+        },
+        "set": {
+            "selector": False,
+            "params": [
+                ("name", QLineEdit, "Variable", {}),
+                ("value", QLineEdit, "Value", {}),
+            ],
+        },
+        "wait": {
+            "selector": False,
+            "params": [
+                ("ms", QSpinBox, "Milliseconds", {"min": 0, "max": 120000, "suffix": " ms"}),
+            ],
+        },
+        "prompt.input": {
+            "selector": False,
+            "params": [
+                ("message", QLineEdit, "Message", {}),
+                ("default", QLineEdit, "Default", {}),
+                ("mask", QCheckBox, "Mask Input", {}),
+            ],
+        },
+        "prompt.confirm": {
+            "selector": False,
+            "params": [
+                ("message", QLineEdit, "Message", {}),
+                ("default", QComboBox, "Default", {"items": ["True", "False", "None"]}),
+            ],
+        },
+        "prompt.select": {
+            "selector": False,
+            "params": [
+                ("message", QLineEdit, "Message", {}),
+                ("options", QLineEdit, "Options", {"list": True}),
+                ("default", QLineEdit, "Default", {}),
+            ],
+        },
+    }
+
     def __init__(self):
         super().__init__()
         self.setObjectName("propPanel")
@@ -345,6 +397,14 @@ class PropertiesPanel(QWidget):
         form.addRow(self.selector)
         v.addLayout(form)
 
+        # dynamic parameter form
+        self.param_form = QFormLayout()
+        self.param_form.setHorizontalSpacing(12)
+        self.param_form.setVerticalSpacing(10)
+        v.addLayout(self.param_form)
+        self.param_fields: dict[str, QWidget] = {}
+        self._field_specs: dict[str, tuple] = {}
+
         self.advanced_group = QWidget()
         adv_v = QVBoxLayout(self.advanced_group)
         adv_v.setContentsMargins(0, 0, 0, 0)
@@ -364,12 +424,13 @@ class PropertiesPanel(QWidget):
         self._current_step: Step | None = None
         self._loading = False
 
-        self.act.currentIndexChanged.connect(self._on_changed)
+        self.act.currentIndexChanged.connect(self._on_action_changed)
         self.selector.editingFinished.connect(self._on_changed)
         self.out.editingFinished.connect(self._on_changed)
         self.to.valueChanged.connect(self._on_changed)
         self.re.valueChanged.connect(self._on_changed)
         self.chk.toggled.connect(self._on_changed)
+        self._selector_label = form.labelForField(self.selector_btn)
 
     def _open_selector_editor(self) -> None:
         """Open a dialog for editing the selector value."""
@@ -386,6 +447,8 @@ class PropertiesPanel(QWidget):
         self._current_step = step
         self._loading = True
         self.act.setCurrentText(step.action or "")
+        # build parameter widgets for this action
+        self._build_action_form(step.action or "")
         if step.selector and isinstance(step.selector, dict):
             self.selector.setText(str(step.selector.get("value", "")))
         else:
@@ -394,6 +457,20 @@ class PropertiesPanel(QWidget):
         self.to.setValue(step.timeoutMs or 0)
         self.re.setValue(step.retry or 0)
         self.chk.setChecked(step.onError.get("screenshot", False))
+        # populate action-specific params
+        for name, widget in self.param_fields.items():
+            val = step.params.get(name)
+            if isinstance(widget, QLineEdit):
+                widget.setText("" if val is None else str(val))
+            elif isinstance(widget, QSpinBox):
+                widget.setValue(int(val) if val is not None else 0)
+            elif isinstance(widget, QComboBox):
+                text = "" if val is None else str(val)
+                idx = widget.findText(text)
+                if idx >= 0:
+                    widget.setCurrentIndex(idx)
+            elif isinstance(widget, QCheckBox):
+                widget.setChecked(bool(val))
         self._loading = False
 
     def apply_changes(self, step: Step) -> None:
@@ -406,6 +483,79 @@ class PropertiesPanel(QWidget):
         step.timeoutMs = self.to.value() or None
         step.retry = self.re.value() or None
         step.onError["screenshot"] = self.chk.isChecked()
+        # write action specific params
+        for name, widget in self.param_fields.items():
+            spec = self._field_specs.get(name, {})
+            if isinstance(widget, QLineEdit):
+                txt = widget.text().strip()
+                if spec.get("list"):
+                    step.params[name] = [t.strip() for t in txt.split(",") if t.strip()]
+                elif txt:
+                    step.params[name] = txt
+                else:
+                    step.params.pop(name, None)
+            elif isinstance(widget, QSpinBox):
+                step.params[name] = widget.value()
+            elif isinstance(widget, QComboBox):
+                val = widget.currentText()
+                if val == "True":
+                    step.params[name] = True
+                elif val == "False":
+                    step.params[name] = False
+                elif val == "None" or val == "":
+                    step.params.pop(name, None)
+                else:
+                    step.params[name] = val
+            elif isinstance(widget, QCheckBox):
+                step.params[name] = widget.isChecked()
+
+    def _build_action_form(self, action: str) -> None:
+        """(Re)build the form for the given action."""
+        # remove previous widgets
+        while self.param_form.count():
+            item = self.param_form.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        self.param_fields.clear()
+        self._field_specs.clear()
+
+        cfg = self.ACTION_FORMS.get(action)
+        needs_selector = True
+        if cfg:
+            needs_selector = cfg.get("selector", True)
+            for name, widget_cls, label, extra in cfg.get("params", []):
+                widget: QWidget = widget_cls()
+                # apply extra options
+                if isinstance(widget, QSpinBox):
+                    widget.setRange(extra.get("min", 0), extra.get("max", 999999))
+                    if "suffix" in extra:
+                        widget.setSuffix(extra["suffix"])
+                if isinstance(widget, QComboBox) and "items" in extra:
+                    widget.addItems(list(extra["items"]))
+                self.param_form.addRow(label, widget)
+                self.param_fields[name] = widget
+                self._field_specs[name] = extra
+                # connect change signals
+                if isinstance(widget, QLineEdit):
+                    widget.editingFinished.connect(self._on_changed)
+                elif isinstance(widget, QSpinBox):
+                    widget.valueChanged.connect(self._on_changed)
+                elif isinstance(widget, QComboBox):
+                    widget.currentIndexChanged.connect(self._on_changed)
+                elif isinstance(widget, QCheckBox):
+                    widget.toggled.connect(self._on_changed)
+        # show/hide selector row
+        self.selector.setVisible(needs_selector)
+        self.selector_btn.setVisible(needs_selector)
+        if self._selector_label:
+            self._selector_label.setVisible(needs_selector)
+
+    def _on_action_changed(self, idx: int) -> None:
+        if self._loading:
+            return
+        self._build_action_form(self.act.currentText())
+        self._on_changed()
 
     def _on_changed(self, *args) -> None:
         if self._loading or not self._current_step:
