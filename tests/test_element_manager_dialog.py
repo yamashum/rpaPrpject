@@ -18,7 +18,8 @@ def test_spy_adds_row(monkeypatch):
     dlg = ElementManagerDialog()
     dlg.selector_edit.setText("#login")
     dlg._on_spy()
-    assert dlg.table.rowCount() == 1
-    dlg.table.selectRow(0)
+    assert dlg.desktop_table.rowCount() == 1
+    dlg.tabs.setCurrentWidget(dlg.desktop_table)
+    dlg.desktop_table.selectRow(0)
     dlg._remove_selected()
-    assert dlg.table.rowCount() == 0
+    assert dlg.desktop_table.rowCount() == 0
