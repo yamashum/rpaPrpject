@@ -22,6 +22,10 @@ from . import scheduler
 from .flow_signature import verify_flow
 from .flow_git import is_approved
 
+# Location where approval requests are recorded
+FLOWS_DIR = Path("flows")
+APPROVAL_REQUEST_FILE = FLOWS_DIR / "approval_requests.json"
+
 # Supported high-level flow operations
 FLOW_OPERATIONS = {"view", "run", "edit", "publish", "approve"}
 
@@ -401,6 +405,33 @@ class Runner:
     def approve_flow(self, flow: Flow, inputs: Optional[Dict[str, Any]] = None) -> None:
         ctx = ExecutionContext(flow, inputs or {})
         ctx.require_flow_op("approve")
+
+    def request_approval(self, flow: Flow, inputs: Optional[Dict[str, Any]] = None) -> None:
+        """Record an approval request for ``flow``.
+
+        This default implementation simply writes the request details to
+        ``approval_requests.json`` within the ``flows`` directory.  The record
+        includes the flow identifier, the requesting user and a timestamp.
+        ``inputs`` may provide additional context but is currently unused.
+        """
+
+        ctx = ExecutionContext(flow, inputs or {})
+        ctx.require_flow_op("view")
+
+        data: Dict[str, Any] = {}
+        if APPROVAL_REQUEST_FILE.exists():
+            try:
+                data = json.loads(APPROVAL_REQUEST_FILE.read_text())
+            except json.JSONDecodeError:
+                data = {}
+
+        flow_id = getattr(flow.meta, "name", "") or "unknown"
+        data[flow_id] = {
+            "requested_by": getpass.getuser(),
+            "timestamp": datetime.now().isoformat(),
+        }
+        APPROVAL_REQUEST_FILE.parent.mkdir(parents=True, exist_ok=True)
+        APPROVAL_REQUEST_FILE.write_text(json.dumps(data, indent=2))
 
     # ----- secure desktop / UAC handling -----
     def _has_uac_prompt(self) -> bool:

@@ -40,6 +40,7 @@ from PyQt6.QtWidgets import (
     QWizard,
     QWizardPage,
     QPlainTextEdit,
+    QMessageBox,
 )
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -893,7 +894,17 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def request_approval(self):
-        self.show_history()
+        now = datetime.now().strftime("%H:%M:%S")
+        try:
+            data = json.loads(self.current_flow_path.read_text())
+            flow = Flow.from_dict(data)
+            Runner().request_approval(flow)
+        except Exception as exc:  # pragma: no cover - defensive
+            self.log_panel.add_row(now, "Approval", f"Failed: {exc}", False)
+            QMessageBox.critical(self, "Approval Request", f"Failed: {exc}")
+        else:
+            self.log_panel.add_row(now, "Approval", "Request sent", True)
+            QMessageBox.information(self, "Approval Request", "Request sent")
 
     def on_flow_updated(self, path: str):
         """Refresh UI when the watched flow definition changes."""
