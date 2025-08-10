@@ -1800,3 +1800,39 @@ BUILTIN_ACTIONS.update(
         "alt_selector": alt_selector,
     }
 )
+
+
+def list_actions() -> Dict[str, list[str]]:
+    """Return available actions grouped by category.
+
+    The groups are intended for UI consumption so the action palette can be
+    generated dynamically.  Any action not explicitly assigned to a category is
+    considered advanced and placed under ``詳細設定``.
+    """
+
+    categories: Dict[str, list[str]] = {
+        "Basic": [
+            "log",
+            "set",
+            "wait",
+            "prompt.input",
+            "prompt.confirm",
+            "prompt.select",
+        ],
+        "UI": sorted(set(_UI_ACTIONS)),
+        "Web": sorted(WEB_ACTIONS),
+        "Office": sorted(
+            set(OFFICE_ACTIONS)
+            | set(WORD_ACTIONS)
+            | set(OUTLOOK_ACTIONS)
+            | set(ACCESS_ACTIONS)
+        ),
+        "HTTP": sorted(HTTP_ACTIONS),
+        "Files": sorted(FILES_ACTIONS),
+    }
+
+    assigned = set().union(*categories.values())
+    advanced = sorted(set(BUILTIN_ACTIONS) - assigned)
+    if advanced:
+        categories["詳細設定"] = advanced
+    return categories
