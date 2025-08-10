@@ -138,7 +138,7 @@ class StepCard(QFrame):
         h.addWidget(ic); h.addLayout(texts); h.addStretch(1); h.addWidget(more)
 
 def add_step_button():
-    btn = QPushButton("+  Add Step")
+    btn = QPushButton("＋ ステップ追加")
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setFixedSize(160, 36)
     btn.setStyleSheet("""
@@ -202,7 +202,7 @@ class PropertiesPanel(QWidget):
         re = QSpinBox(); re.setRange(0, 20); re.setValue(3)
         chk = QCheckBox("Save screenshot"); chk.setChecked(True)
         form.addRow("Action", act)
-        form.addRow("Seekitor Editor", QPushButton("Open…"))
+        form.addRow("Seekitor Editor", QPushButton("開く…"))
         form.addRow(selector)
         form.addRow("Output Variable", out)
         form.addRow("Timeout", to)
@@ -222,12 +222,12 @@ class HeaderBar(QWidget):
             QPushButton.ghost:hover{ background:#F6F8FD; }
         """)
         h = QHBoxLayout(self); h.setContentsMargins(16,10,16,10); h.setSpacing(10)
-        self.run_btn = QPushButton("▶  Run"); self.run_btn.setObjectName("primary")
-        self.stop_btn = QPushButton("□  Stop"); self.stop_btn.setProperty("class","ghost")
-        self.dry_btn  = QPushButton("◻  Dry Run"); self.dry_btn.setProperty("class","ghost")
-        self.sett_btn = QPushButton("⚙  Setting"); self.sett_btn.setProperty("class","ghost")
-        self.hist_btn = QPushButton("History"); self.hist_btn.setProperty("class","ghost")
-        self.appr_btn = QPushButton("Request Approval"); self.appr_btn.setProperty("class","ghost")
+        self.run_btn = QPushButton("▶ 実行"); self.run_btn.setObjectName("primary")
+        self.stop_btn = QPushButton("□ 停止"); self.stop_btn.setProperty("class","ghost")
+        self.dry_btn  = QPushButton("◻ ドライラン"); self.dry_btn.setProperty("class","ghost")
+        self.sett_btn = QPushButton("⚙ 設定"); self.sett_btn.setProperty("class","ghost")
+        self.hist_btn = QPushButton("履歴"); self.hist_btn.setProperty("class","ghost")
+        self.appr_btn = QPushButton("承認依頼"); self.appr_btn.setProperty("class","ghost")
 
         # basic context help so first-time users understand the actions
         self.run_btn.setToolTip("Execute the current workflow")
@@ -326,8 +326,8 @@ class FlowHistoryDialog(QDialog):
         self.diff_view.setReadOnly(True)
         layout.addWidget(self.diff_view)
         btns = QHBoxLayout()
-        diff_btn = QPushButton("Diff")
-        approve_btn = QPushButton("Approve")
+        diff_btn = QPushButton("差分表示")
+        approve_btn = QPushButton("承認")
         diff_btn.clicked.connect(self._show_diff)
         approve_btn.clicked.connect(self._approve)
         btns.addWidget(diff_btn)
@@ -439,7 +439,8 @@ class MainWindow(QMainWindow):
         self.header.sett_btn.clicked.connect(self.on_setting)
         self.header.hist_btn.clicked.connect(self.show_history)
         self.header.appr_btn.clicked.connect(self.request_approval)
-        self.action_palette.list.itemDoubleClicked.connect(self.palette_double_clicked)
+        # Add steps with a single click from the action palette instead of requiring a double-click
+        self.action_palette.list.itemClicked.connect(self.palette_clicked)
 
     def save_flow(self) -> None:
         """Persist the current flow to ``self.current_flow_path``."""
@@ -546,7 +547,9 @@ class MainWindow(QMainWindow):
         self._rebuild_from_flow()
         self.save_flow()
 
-    def palette_double_clicked(self, item):
+    def palette_clicked(self, item):
+        """Handle single-clicks on the action palette."""
+        # Ignore section headers which are rendered in bold
         if item.font().bold():
             return
         self.add_step(action=item.text().strip())
