@@ -363,6 +363,22 @@ class Runner:
         self._run_steps(flow.steps[index:], ctx)
         return ctx.flow_vars
 
+    def view_flow(self, flow: Flow, inputs: Optional[Dict[str, Any]] = None) -> None:
+        ctx = ExecutionContext(flow, inputs or {})
+        ctx.require_flow_op("view")
+
+    def edit_flow(self, flow: Flow, inputs: Optional[Dict[str, Any]] = None) -> None:
+        ctx = ExecutionContext(flow, inputs or {})
+        ctx.require_flow_op("edit")
+
+    def publish_flow(self, flow: Flow, inputs: Optional[Dict[str, Any]] = None) -> None:
+        ctx = ExecutionContext(flow, inputs or {})
+        ctx.require_flow_op("publish")
+
+    def approve_flow(self, flow: Flow, inputs: Optional[Dict[str, Any]] = None) -> None:
+        ctx = ExecutionContext(flow, inputs or {})
+        ctx.require_flow_op("approve")
+
     # ----- secure desktop / UAC handling -----
     def _has_uac_prompt(self) -> bool:
         return os.getenv("UAC_PROMPT", "").lower() in {"1", "true", "yes"}

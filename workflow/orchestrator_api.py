@@ -2,11 +2,15 @@ from __future__ import annotations
 
 """HTTP API for interacting with the orchestrator."""
 
+import json
+from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from .orchestrator import orchestrator, Job
+from .flow import Flow
+from .runner import Runner
 
 app = FastAPI(title="RPA Orchestrator")
 
@@ -22,6 +26,10 @@ class StatusUpdate(BaseModel):
 
 @app.post("/jobs")
 def submit_job(req: SubmitRequest) -> dict:
+    flow_path = Path(req.flow)
+    data = json.loads(flow_path.read_text())
+    flow = Flow.from_dict(data)
+    Runner().view_flow(flow)
     job = orchestrator.submit(req.flow)
     return {"id": job.id}
 
