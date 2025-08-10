@@ -113,6 +113,7 @@ class StepListWidget(QListWidget):
     """List widget that supports internal drag & drop to reorder steps."""
 
     orderChanged = pyqtSignal()
+    stepSelected = pyqtSignal(Step)
 
     def __init__(self):
         super().__init__()
@@ -121,6 +122,14 @@ class StepListWidget(QListWidget):
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setSpacing(18)
         self.setStyleSheet("QListWidget{background:transparent;border:none;}")
+        self.currentItemChanged.connect(self._on_current_item_changed)
+
+    def _on_current_item_changed(self, current, previous):
+        if not current:
+            return
+        step = current.data(Qt.ItemDataRole.UserRole)
+        if isinstance(step, Step):
+            self.stepSelected.emit(step)
 
     def dragEnterEvent(self, event):  # type: ignore[override]
         if event.source() is self:
@@ -293,23 +302,93 @@ class PropertiesPanel(QWidget):
             QLineEdit, QComboBox{ background:#fff; border:1px solid #DCE3F2; border-radius:8px; padding:6px 8px; }
             QSpinBox{ background:#fff; border:1px solid #DCE3F2; border-radius:8px; padding:4px 8px; }
         """)
-        v = QVBoxLayout(self); v.setContentsMargins(20,20,20,20); v.setSpacing(12)
-        head = QLabel("Properties"); head.setObjectName("header")
+        v = QVBoxLayout(self)
+        v.setContentsMargins(20, 20, 20, 20)
+        v.setSpacing(12)
+        head = QLabel("Properties")
+        head.setObjectName("header")
         v.addWidget(head)
-        form = QFormLayout(); form.setHorizontalSpacing(12); form.setVerticalSpacing(10)
-        act = QComboBox(); act.addItems(["Click", "Input", "Write to Excel", "Web - Navigate"])
-        selector = QLineEdit("any01   UIA/image...")
-        out = QLineEdit("result1")
-        to = QSpinBox(); to.setRange(0, 120000); to.setValue(3000); to.setSuffix(" ms")
-        re = QSpinBox(); re.setRange(0, 20); re.setValue(3)
-        chk = QCheckBox("Save screenshot"); chk.setChecked(True)
-        form.addRow("Action", act)
+        form = QFormLayout()
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
+        self.act = QComboBox()
+        self.act.addItems(["Click", "Input", "Write to Excel", "Web - Navigate"])
+        self.selector = QLineEdit("any01   UIA/image...")
+        self.out = QLineEdit("result1")
+        self.to = QSpinBox()
+        self.to.setRange(0, 120000)
+        self.to.setValue(3000)
+        self.to.setSuffix(" ms")
+        self.re = QSpinBox()
+        self.re.setRange(0, 20)
+        self.re.setValue(3)
+        self.chk = QCheckBox("Save screenshot")
+        self.chk.setChecked(True)
+        form.addRow("Action", self.act)
         form.addRow("Seekitor Editor", QPushButton("開く…"))
-        form.addRow(selector)
-        form.addRow("Output Variable", out)
-        form.addRow("Timeout", to)
-        form.addRow("Retry Count", re)
-        v.addLayout(form); v.addWidget(QLabel("On Failure")); v.addWidget(chk); v.addStretch(1)
+        form.addRow(self.selector)
+        form.addRow("Output Variable", self.out)
+        form.addRow("Timeout", self.to)
+        form.addRow("Retry Count", self.re)
+        v.addLayout(form)
+        v.addWidget(QLabel("On Failure"))
+        v.addWidget(self.chk)
+        v.addStretch(1)
+
+        self._current_step: Step | None = None
+        self._loading = False
+
+        self.act.currentIndexChanged.connect(self._on_changed)
+        self.selector.editingFinished.connect(self._on_changed)
+        self.out.editingFinished.connect(self._on_changed)
+        self.to.valueChanged.connect(self._on_changed)
+        self.re.valueChanged.connect(self._on_changed)
+        self.chk.toggled.connect(self._on_changed)
+
+    def load_step(self, step: Step) -> None:
+        """Populate the form fields from ``step``."""
+        self._current_step = step
+        self._loading = True
+        self.act.setCurrentText(step.action or "")
+        if step.selector and isinstance(step.selector, dict):
+            self.selector.setText(str(step.selector.get("value", "")))
+        else:
+            self.selector.setText("")
+        self.out.setText(step.out or "")
+        self.to.setValue(step.timeoutMs or 0)
+        self.re.setValue(step.retry or 0)
+        self.chk.setChecked(step.onError.get("screenshot", False))
+        self._loading = False
+
+    def apply_changes(self, step: Step) -> None:
+        """Write form values back to ``step``."""
+        step.action = self.act.currentText() or None
+        selector_txt = self.selector.text().strip()
+        step.selector = {"value": selector_txt} if selector_txt else None
+        out_txt = self.out.text().strip()
+        step.out = out_txt or None
+        step.timeoutMs = self.to.value() or None
+        step.retry = self.re.value() or None
+        step.onError["screenshot"] = self.chk.isChecked()
+
+    def _on_changed(self, *args) -> None:
+        if self._loading or not self._current_step:
+            return
+        mw = self.window()
+        if hasattr(mw, "record_history"):
+            mw.record_history()
+        self.apply_changes(self._current_step)
+        # update card subtitle
+        if hasattr(mw, "canvas"):
+            item = mw.canvas.list.currentItem()
+            if item:
+                card = mw.canvas.list.itemWidget(item)
+                if card:
+                    sub = card.findChild(QLabel, "sub")
+                    if sub:
+                        sub.setText(self._current_step.action or "")
+        if hasattr(mw, "save_flow"):
+            mw.save_flow()
 
 # ---------- ヘッダー ----------
 class HeaderBar(QWidget):
@@ -499,9 +578,14 @@ class MainWindow(QMainWindow):
         self.add_step(icon="📊", action="Write to Excel", record=False)
         self.add_step(icon="🌐", action="Web - navigate", record=False)
         center_scroll.setWidget(self.canvas)
-        right = PropertiesPanel()
-        hsplit.addWidget(self.action_palette); hsplit.addWidget(center_scroll); hsplit.addWidget(right)
+        self.prop_panel = PropertiesPanel()
+        hsplit.addWidget(self.action_palette)
+        hsplit.addWidget(center_scroll)
+        hsplit.addWidget(self.prop_panel)
         hsplit.setSizes([280, 720, 360])
+        self.canvas.list.stepSelected.connect(self.prop_panel.load_step)
+        if self.canvas.list.count():
+            self.canvas.list.setCurrentRow(0)
 
         # ⬇︎ ログは縦Splitterで高さを安定化
         vsplit = QSplitter(Qt.Orientation.Vertical)
