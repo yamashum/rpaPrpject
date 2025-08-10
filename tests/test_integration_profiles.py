@@ -23,7 +23,8 @@ def test_environment_integration(monkeypatch, profile, dpi, lang):
 
     # Provide a fake OCR backend that echoes the requested language
     pytesseract = types.SimpleNamespace(
-        image_to_string=lambda img, lang=None: f"text-{lang}"
+        image_to_string=lambda img, lang=None: f"text-{lang}",
+        get_languages=lambda config="": ["eng", "jpn"],
     )
     sys.modules["pytesseract"] = pytesseract
 
