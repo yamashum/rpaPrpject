@@ -48,6 +48,7 @@ from workflow.flow_git import commit_and_tag, history as flow_history, diff as f
 from workflow.flow import Flow, Step, Meta
 from workflow.runner import Runner
 from workflow.logging import set_step_log_callback
+from workflow.actions import list_actions
 
 # Global queue receiving actions recorded by external modules
 recorded_actions_q: "queue.Queue[dict]" = queue.Queue()
@@ -265,20 +266,20 @@ class ActionPalette(QWidget):
         title = QLabel("Action Palette"); title.setObjectName("title")
         self.list = _PaletteListWidget()
         v.addWidget(title); v.addWidget(self.list)
-        self._section("Window Operations", ["Launch / Attach", "Activate / Bring to Front"])
-        self._section("Mouse and Keyboard", ["Click", "Double Click", "Type Text"])
-        self._section("Element Interaction (UIA)", ["Set Value", "Select", "Check / Uncheck"])
-        self._section("Image and OCR", ["Find Image", "OCR Read"])
-        self._section("Coordinate Click", ["Click (X,Y)"])
-        self._section("Office / Excel / Word", ["Open", "Write Cell", "Save"])
-        self._section("Conditions and Loops", ["If", "For Each"])
-        self._section("Exception Handling", ["Try / Catch"])
+        for header, items in list_actions().items():
+            display = [self._humanize(a) for a in items]
+            self._section(header, display)
 
     def _section(self, header, items):
         h = QListWidgetItem(f"  {header}"); f = QFont(); f.setBold(True); h.setFont(f)
         self.list.addItem(h)
         for it in items:
             self.list.addItem(QListWidgetItem(f"    {it}"))
+
+    @staticmethod
+    def _humanize(name: str) -> str:
+        """Convert internal action names to human readable labels."""
+        return name.replace("_", " ").replace(".", " / ").title()
 
 # ---------- 右プロパティ ----------
 class PropertiesPanel(QWidget):
