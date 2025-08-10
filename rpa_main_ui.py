@@ -425,7 +425,11 @@ class MainWindow(QMainWindow):
             data = json.loads(self.current_flow_path.read_text())
             flow = Flow.from_dict(data)
             self.runner = Runner()
-            self.runner.run_flow(flow)
+            try:
+                self.runner.run_flow(flow)
+            finally:
+                # Clear the reference so subsequent stops don't target a stale runner
+                self.runner = None
         except Exception as exc:  # pragma: no cover - defensive
             self.log_panel.add_row(
                 datetime.now().strftime("%H:%M:%S"),
@@ -450,6 +454,9 @@ class MainWindow(QMainWindow):
             self.log_panel.add_row(now, "Run", f"Stop failed: {exc}", False)
         else:
             self.log_panel.add_row(now, "Run", "Stop requested", True)
+        finally:
+            # Always drop the runner reference once a stop was requested
+            self.runner = None
 
     def on_dry(self):
         now = datetime.now().strftime("%H:%M:%S")
@@ -458,7 +465,11 @@ class MainWindow(QMainWindow):
             data = json.loads(self.current_flow_path.read_text())
             flow = Flow.from_dict(data)
             self.runner = Runner()
-            result = self.runner.run_flow(flow, auto_resume=True)
+            try:
+                result = self.runner.run_flow(flow, auto_resume=True)
+            finally:
+                # Ensure the runner doesn't persist beyond this dry run
+                self.runner = None
         except Exception as exc:  # pragma: no cover - defensive
             self.log_panel.add_row(
                 datetime.now().strftime("%H:%M:%S"),
