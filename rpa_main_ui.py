@@ -49,6 +49,7 @@ from workflow.flow import Flow, Step, Meta
 from workflow.runner import Runner
 from workflow.logging import set_step_log_callback
 from workflow.actions import list_actions
+from settings_dialog import SettingsDialog
 
 # Global queue receiving actions recorded by external modules
 recorded_actions_q: "queue.Queue[dict]" = queue.Queue()
@@ -653,25 +654,31 @@ class MainWindow(QMainWindow):
         # Add steps with a single click from the action palette instead of requiring a double-click
         self.action_palette.list.itemClicked.connect(self.palette_clicked)
 
-        # Launch onboarding wizard on first run and load role
+        # Launch onboarding wizard on first run and load existing configuration
         self._config_path = Path.home() / ".config" / "rpa_project" / "config.json"
-        cfg = {}
+        self._config: dict[str, object] = {}
         if self._config_path.exists():
             try:
-                cfg = json.loads(self._config_path.read_text())
+                self._config = json.loads(self._config_path.read_text())
             except Exception:
-                cfg = {}
-        self.role = cfg.get("role", "user")
+                self._config = {}
+
+        # Load individual settings with fallbacks
+        self.role = self._config.get("role", "user")
+        self.theme = self._config.get("theme", "light")
+        self.default_timeout = self._config.get("default_timeout", 1000)
+
         show_wizard = False
-        if not os.environ.get("PYTEST_CURRENT_TEST") and not cfg.get("onboarding_complete"):
+        if not os.environ.get("PYTEST_CURRENT_TEST") and not self._config.get(
+            "onboarding_complete"
+        ):
             show_wizard = True
-            self._config = cfg
         if show_wizard:
             wizard = OnboardingWizard(self)
             if wizard.exec():
-                cfg["onboarding_complete"] = True
+                self._config["onboarding_complete"] = True
                 self._config_path.parent.mkdir(parents=True, exist_ok=True)
-                self._config_path.write_text(json.dumps(cfg, indent=2))
+                self._config_path.write_text(json.dumps(self._config, indent=2))
 
         initial_adv = self.role == "admin"
         self.header.adv_chk.setChecked(initial_adv)
@@ -863,7 +870,21 @@ class MainWindow(QMainWindow):
             )
 
     def on_setting(self):
-        self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Setting", "Opened", True)
+        self.log_panel.add_row(
+            datetime.now().strftime("%H:%M:%S"), "Setting", "Opened", True
+        )
+        dlg = SettingsDialog(self._config, self)
+        if dlg.exec():
+            # Refresh cached values after save
+            self.theme = self._config.get("theme", "light")
+            self.default_timeout = self._config.get("default_timeout", 1000)
+            self.log_panel.add_row(
+                datetime.now().strftime("%H:%M:%S"), "Setting", "Saved", True
+            )
+        else:
+            self.log_panel.add_row(
+                datetime.now().strftime("%H:%M:%S"), "Setting", "Canceled", False
+            )
 
     def show_history(self):
         flow = Flow.from_dict(json.loads(self.current_flow_path.read_text()))
