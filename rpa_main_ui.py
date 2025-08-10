@@ -290,6 +290,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("RPA Designer Mock")
         self.resize(1280, 860)
         self.current_flow_path = Path("flows/sample_flow.json")
+        self.runner: Runner | None = None
 
         root = QWidget(); self.setCentralWidget(root)
         root_v = QVBoxLayout(root); root_v.setContentsMargins(0,0,0,0); root_v.setSpacing(0)
@@ -390,8 +391,8 @@ class MainWindow(QMainWindow):
         try:
             data = json.loads(self.current_flow_path.read_text())
             flow = Flow.from_dict(data)
-            runner = Runner()
-            runner.run_flow(flow)
+            self.runner = Runner()
+            self.runner.run_flow(flow)
         except Exception as exc:  # pragma: no cover - defensive
             self.log_panel.add_row(
                 datetime.now().strftime("%H:%M:%S"),
@@ -405,7 +406,17 @@ class MainWindow(QMainWindow):
             )
 
     def on_stop(self):
-        self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Run", "Stopped", False)
+        """Request the running flow to stop and log the outcome."""
+        now = datetime.now().strftime("%H:%M:%S")
+        if not self.runner:
+            self.log_panel.add_row(now, "Run", "No active flow", False)
+            return
+        try:
+            self.runner.stop()
+        except Exception as exc:  # pragma: no cover - defensive
+            self.log_panel.add_row(now, "Run", f"Stop failed: {exc}", False)
+        else:
+            self.log_panel.add_row(now, "Run", "Stop requested", True)
 
     def on_dry(self):
         self.log_panel.add_row(datetime.now().strftime("%H:%M:%S"), "Dry Run", "Started", True)
