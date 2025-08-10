@@ -53,6 +53,7 @@ from workflow.logging import set_step_log_callback
 from workflow.actions import list_actions
 from settings_dialog import SettingsDialog
 from selector_editor_dialog import SelectorEditorDialog
+from element_manager_dialog import ElementManagerDialog
 
 # Global queue receiving actions recorded by external modules
 recorded_actions_q: "queue.Queue[dict]" = queue.Queue()
@@ -86,6 +87,7 @@ TEXT = {
     "tooltip_settings": "設定を開きます",
     "tooltip_history": "実行履歴を表示します",
     "tooltip_approval": "このフローの承認を依頼します",
+    "tooltip_elements": "要素を取得・管理します",
     "log_header_time": "時刻",
     "log_header_step": "ステップ",
     "log_header_status": "状態",
@@ -653,6 +655,7 @@ class HeaderBar(QWidget):
         self.sett_btn = QPushButton("⚙ 設定"); self.sett_btn.setProperty("class","ghost")
         self.hist_btn = QPushButton("履歴"); self.hist_btn.setProperty("class","ghost")
         self.appr_btn = QPushButton("承認依頼"); self.appr_btn.setProperty("class","ghost")
+        self.elem_btn = QPushButton("要素"); self.elem_btn.setProperty("class","ghost")
         self.adv_chk = QCheckBox("詳細設定"); self.adv_chk.setProperty("class","ghost")
 
         # basic context help so first-time users understand the actions
@@ -662,9 +665,10 @@ class HeaderBar(QWidget):
         self.sett_btn.setToolTip(TEXT["tooltip_settings"])
         self.hist_btn.setToolTip(TEXT["tooltip_history"])
         self.appr_btn.setToolTip(TEXT["tooltip_approval"])
+        self.elem_btn.setToolTip(TEXT["tooltip_elements"])
         left = QHBoxLayout(); left.setSpacing(8)
         left.addWidget(self.run_btn); left.addWidget(self.stop_btn); left.addWidget(self.dry_btn); left.addWidget(self.sett_btn)
-        left.addWidget(self.hist_btn); left.addWidget(self.appr_btn); left.addWidget(self.adv_chk)
+        left.addWidget(self.hist_btn); left.addWidget(self.appr_btn); left.addWidget(self.elem_btn); left.addWidget(self.adv_chk)
         h.addLayout(left); h.addStretch(1)
         user = QLabel("🔍    👤"); user.setStyleSheet("color:#8AA0C6;")
         h.addWidget(user)
@@ -879,6 +883,7 @@ class MainWindow(QMainWindow):
         self.header.sett_btn.clicked.connect(self.on_setting)
         self.header.hist_btn.clicked.connect(self.show_history)
         self.header.appr_btn.clicked.connect(self.request_approval)
+        self.header.elem_btn.clicked.connect(self.open_element_manager)
         self.header.adv_chk.toggled.connect(self._on_adv_toggled)
         # Add steps with a single click from the action palette instead of requiring a double-click
         self.action_palette.list.itemClicked.connect(self.palette_clicked)
@@ -1149,6 +1154,10 @@ class MainWindow(QMainWindow):
             self.log_panel.add_row(
                 datetime.now().strftime("%H:%M:%S"), "Setting", "Canceled", False
             )
+
+    def open_element_manager(self):
+        dlg = ElementManagerDialog(self)
+        dlg.exec()
 
     def show_history(self):
         flow = Flow.from_dict(json.loads(self.current_flow_path.read_text()))

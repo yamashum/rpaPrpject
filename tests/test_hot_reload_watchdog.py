@@ -2,6 +2,9 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
+pytest.importorskip("PyQt6")
 from PyQt6.QtWidgets import QApplication
 
 import rpa_main_ui
