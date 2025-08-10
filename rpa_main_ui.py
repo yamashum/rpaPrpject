@@ -255,6 +255,8 @@ class DottedCanvas(QWidget):
             event.ignore()
 
 class StepCard(QFrame):
+    clicked = pyqtSignal()
+
     def __init__(self, icon, title, subtitle):
         super().__init__()
         self.setObjectName("stepCard")
@@ -278,6 +280,10 @@ class StepCard(QFrame):
             "QPushButton{background:#fff;border:1px solid #E5EAF5;border-radius:14px;color:#6B7A99;font-size:16px;} QPushButton:hover{background:#F6F8FD;}"
         )
         h.addWidget(ic); h.addLayout(texts); h.addStretch(1); h.addWidget(self.more)
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        self.clicked.emit()
 
 def add_step_button():
     btn = QPushButton("＋ ステップ追加")
@@ -523,6 +529,7 @@ class PropertiesPanel(QWidget):
             elif isinstance(widget, QCheckBox):
                 widget.setChecked(bool(val))
         self._loading = False
+        self.update()
 
     def apply_changes(self, step: Step) -> None:
         """Write form values back to ``step``."""
@@ -937,6 +944,12 @@ class MainWindow(QMainWindow):
             if title_lbl:
                 title_lbl.setText(f"Step {i+1}")
 
+    def _emit_step_selected(self, item: QListWidgetItem) -> Step:
+        self.canvas.list.setCurrentItem(item)
+        step = item.data(Qt.ItemDataRole.UserRole)
+        self.canvas.list.stepSelected.emit(step)
+        return step
+
     def _add_step_card(self, step: Step, index: int | None = None, icon: str = "🧩") -> None:
         card = StepCard(icon, "", step.action)
         item = QListWidgetItem()
@@ -947,10 +960,11 @@ class MainWindow(QMainWindow):
         else:
             self.canvas.list.insertItem(index, item)
         self.canvas.list.setItemWidget(item, card)
+        card.clicked.connect(lambda _, it=item: self._emit_step_selected(it))
         card.more.clicked.connect(lambda _, it=item, btn=card.more: self._show_step_menu(it, btn))
 
     def _show_step_menu(self, item: QListWidgetItem, button: QPushButton) -> None:
-        self.canvas.list.setCurrentItem(item)
+        self._emit_step_selected(item)
         menu = QMenu(self)
         menu.addAction("コピー", self.copy_step)
         menu.addAction("削除", self.delete_step)
@@ -1017,8 +1031,9 @@ class MainWindow(QMainWindow):
         if row < 0:
             return
         item = self.canvas.list.item(row)
-        step = item.data(Qt.ItemDataRole.UserRole)
+        step = self._emit_step_selected(item)
         self.prop_panel.load_step(step)
+        self.prop_panel.update()
 
     def undo(self) -> None:
         if not self.undo_stack:
