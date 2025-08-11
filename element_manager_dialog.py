@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+
 from PyQt6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -11,6 +13,7 @@ from PyQt6.QtWidgets import (
     QWidget,
     QLabel,
     QTabWidget,
+    QMessageBox,
 )
 from workflow.gui_tools import ElementInfo, capture_coordinates, element_spy, spy_on_click
 from workflow import element_store
@@ -20,6 +23,7 @@ TEXT = {
     "title": "要素取得・管理",
     "desc": "セレクタを指定して要素情報を取得し、一覧で管理します。",
     "selector_placeholder": "#main > div",
+    "app_path_placeholder": "C:/path/to/app.exe",
     "spy_desktop": "デスクトップ取得",
     "spy_web": "WEB取得",
     "coord": "座標取得",
@@ -47,6 +51,10 @@ class ElementManagerDialog(QDialog):
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel(TEXT["desc"]))
+
+        self.app_path_edit = QLineEdit()
+        self.app_path_edit.setPlaceholderText(TEXT["app_path_placeholder"])
+        layout.addWidget(self.app_path_edit)
 
         form = QHBoxLayout()
         self.selector_edit = QLineEdit()
@@ -95,6 +103,12 @@ class ElementManagerDialog(QDialog):
         self.close_btn.clicked.connect(self.accept)
 
     def _on_spy(self) -> None:
+        app_path = self.app_path_edit.text().strip()
+        if app_path:
+            try:
+                subprocess.Popen(app_path)
+            except Exception as exc:
+                QMessageBox.warning(self, TEXT["title"], str(exc))
         selector = self.selector_edit.text().strip()
         if selector:
             info = element_spy(selector)
